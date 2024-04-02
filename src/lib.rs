@@ -3,7 +3,7 @@ use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, FftNum, RealToComplex};
 use std::sync::Arc;
 
-pub struct UPConv<T: Float + FftNum, const N: usize> {
+pub struct UPConv<T: Float + FftNum> {
     fft: Arc<dyn RealToComplex<T>>,
     ifft: Arc<dyn ComplexToReal<T>>,
     input_buffer: Vec<T>,
@@ -14,7 +14,7 @@ pub struct UPConv<T: Float + FftNum, const N: usize> {
     comp_buff: Vec<Complex<T>>,
 }
 
-impl<T: Float + FftNum, const N: usize> UPConv<T, N> {
+impl<T: Float + FftNum> UPConv<T> {
     pub fn new(block_size: usize, max_filter_size: usize) -> Self {
         let mut planner = RealFftPlanner::<T>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
