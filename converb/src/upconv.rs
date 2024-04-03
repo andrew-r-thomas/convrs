@@ -110,10 +110,12 @@ impl UPConv {
     }
 
     fn multiply_blocks(&mut self) {
+        self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+
         for (filter_block, fdl_block) in self.filter.iter().zip(&self.fdl) {
             for i in 0..self.block_size + 1 {
-                self.accumulation_buffer[i] =
-                    self.accumulation_buffer[i] + (filter_block[i] * fdl_block[i]);
+                let val = self.accumulation_buffer.get(i).copied().unwrap();
+                self.accumulation_buffer[i] = val + (filter_block[i] * fdl_block[i]);
             }
         }
     }
