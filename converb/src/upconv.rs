@@ -159,8 +159,6 @@ impl UPConv {
         assert!(self.filter.len() == self.fdl.len());
 
         for (filter_block, fdl_block) in self.filter.iter().zip(&self.fdl) {
-            nih_log!("filter_block: {:?}", filter_block);
-            nih_log!("fdl_block: {:?}", fdl_block);
             for i in 0..self.block_size + 1 {
                 self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
             }

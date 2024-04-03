@@ -1,6 +1,9 @@
 pub mod upconv;
 
 use nih_plug::prelude::*;
+use rubato::{
+    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
+};
 use std::sync::Arc;
 use upconv::UPConv;
 
@@ -25,7 +28,7 @@ struct ConverbParams {
 
 impl Default for Converb {
     fn default() -> Self {
-        let upconv = UPConv::new(128, 44100);
+        let upconv = UPConv::new(128, 48000);
 
         Self {
             params: Arc::new(ConverbParams::default()),
@@ -108,13 +111,14 @@ impl Plugin for Converb {
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        _buffer_config: &BufferConfig,
+        buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
         nih_log!("initializing");
+        nih_log!("sample rate: {}", buffer_config.sample_rate);
 
         let mut reader = match hound::WavReader::open(
             "/Users/andrewthomas/dev/diy/convrs/converb/IRs/shortsweet.wav",
@@ -125,6 +129,7 @@ impl Plugin for Converb {
                 panic!()
             }
         };
+        nih_log!("filter sample rate: {}", reader.spec().sample_rate);
 
         let bits = reader.spec().bits_per_sample;
         let mut samples: Vec<f32> = Vec::with_capacity(reader.len() as usize);
@@ -159,7 +164,29 @@ impl Plugin for Converb {
             },
         };
 
-        self.upconv.set_filter(&samples);
+        if reader.spec().sample_rate as f32 != buffer_config.sample_rate {
+            let params = SincInterpolationParameters {
+                sinc_len: 256,
+                f_cutoff: 0.95,
+                oversampling_factor: 256,
+                interpolation: SincInterpolationType::Linear,
+                window: WindowFunction::BlackmanHarris,
+            };
+            let mut resampler = SincFixedIn::<f32>::new(
+                buffer_config.sample_rate as f64 / reader.spec().sample_rate as f64,
+                2.0,
+                params,
+                256,
+                1,
+            )
+            .unwrap();
+
+            let new = resampler.process(&vec![&samples], None).unwrap();
+            self.upconv.set_filter(&new[0]);
+        } else {
+            self.upconv.set_filter(&samples);
+        }
+
         true
     }
 
