@@ -1,3 +1,0 @@
-{
-  "rust-analyzer.linkedProjects": ["./examples/converb/Cargo.toml"]
-}
