@@ -7,12 +7,15 @@ pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
     input_buffer: Vec<f32>,
+    input_fft_buff: Vec<f32>,
     output_buffer: Vec<f32>,
+    output_fft_buff: Vec<f32>,
     block_size: usize,
     filter: Vec<Vec<Complex<f32>>>,
     fdl: Vec<Vec<Complex<f32>>>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
+    p: usize,
 }
 
 impl UPConv {
@@ -22,11 +25,14 @@ impl UPConv {
         let ifft = planner.plan_fft_inverse(block_size * 2);
 
         let input_buffer = fft.make_input_vec();
+        let input_fft_buff = fft.make_input_vec();
         let output_buffer = ifft.make_output_vec();
+        let output_fft_buff = ifft.make_output_vec();
         let accumulation_buffer = ifft.make_input_vec();
         let new_spectrum_buff = fft.make_output_vec();
 
         let p = max_filter_size.div_ceil(block_size);
+        nih_log!("our max p is: {}", p);
         let filter = Vec::with_capacity(p);
 
         let fdl = vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p];
@@ -36,11 +42,14 @@ impl UPConv {
             ifft,
             block_size,
             input_buffer,
+            input_fft_buff,
             output_buffer,
+            output_fft_buff,
             filter,
             fdl,
             accumulation_buffer,
             new_spectrum_buff,
+            p,
         }
     }
 
@@ -71,14 +80,37 @@ impl UPConv {
 
             self.filter.push(out);
         }
+        let filter_len = self.filter.len();
+
+        self.filter.extend(vec![
+            vec![Complex { re: 0.0, im: 0.0 }; self.block_size + 1];
+            self.p - filter_len
+        ]);
+
+        // nih_log!("filter len: {}", self.filter.len());
+        // for chunk in &self.filter {
+        //     nih_log!("chunk len: {}", chunk.len());
+        // }
     }
 
     pub fn process_block(&mut self, block: &mut [f32]) -> &[f32] {
-        self.input_buffer.copy_within(self.block_size.., 0);
-        self.input_buffer[self.block_size..].copy_from_slice(block);
+        // nih_log!("block len: {}", block.len());
+
+        self.input_buffer
+            .copy_within(self.block_size..self.block_size * 2, 0);
+        self.input_buffer[self.block_size..self.block_size * 2].copy_from_slice(block);
+
+        self.input_fft_buff[0..self.block_size * 2]
+            .copy_from_slice(&self.input_buffer[0..self.block_size * 2]);
+
+        // nih_log!("input_buffer: {:?}", self.input_buffer);
 
         self.fft
-            .process_with_scratch(&mut self.input_buffer, &mut self.new_spectrum_buff, &mut [])
+            .process_with_scratch(
+                &mut self.input_fft_buff,
+                &mut self.new_spectrum_buff,
+                &mut [],
+            )
             .unwrap();
 
         let fdl_len = self.fdl.len();
@@ -89,12 +121,18 @@ impl UPConv {
             .copy_from_slice(&self.new_spectrum_buff);
 
         self.fdl.rotate_right(1);
+        // nih_log!("first few fdl vals");
+        // for i in 0..5 {
+        //     nih_log!("at index: {}\n val: {:?}", i, self.fdl[i])
+        // }
+
+        self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
 
         self.multiply_blocks();
 
         match self.ifft.process_with_scratch(
             &mut self.accumulation_buffer,
-            &mut self.output_buffer,
+            &mut self.output_fft_buff,
             &mut [],
         ) {
             Ok(_) => {}
@@ -104,18 +142,27 @@ impl UPConv {
                 FftError::ScratchBuffer(_, _) => nih_log!("upconv ifft error, scratch buffer"),
                 FftError::InputValues(_, _) => nih_log!("upconv ifft error, input values"),
             },
-        }
+        };
 
-        &self.output_buffer[self.block_size..]
+        self.output_buffer.copy_from_slice(&self.output_fft_buff);
+
+        self.output_fft_buff.fill(0.0);
+        // nih_log!(
+        //     "going out: {:?}",
+        //     &self.output_buffer[self.block_size..self.block_size * 2]
+        // );
+        &self.output_buffer[self.block_size..self.block_size * 2]
     }
 
     fn multiply_blocks(&mut self) {
         self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+        assert!(self.filter.len() == self.fdl.len());
 
         for (filter_block, fdl_block) in self.filter.iter().zip(&self.fdl) {
+            nih_log!("filter_block: {:?}", filter_block);
+            nih_log!("fdl_block: {:?}", fdl_block);
             for i in 0..self.block_size + 1 {
-                let val = self.accumulation_buffer.get(i).copied().unwrap();
-                self.accumulation_buffer[i] = val + (filter_block[i] * fdl_block[i]);
+                self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
             }
         }
     }
