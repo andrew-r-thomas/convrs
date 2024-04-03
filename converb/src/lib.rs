@@ -1,7 +1,6 @@
 pub mod upconv;
 
 use nih_plug::prelude::*;
-use realfft::RealFftPlanner;
 use std::sync::Arc;
 use upconv::UPConv;
 
@@ -11,7 +10,7 @@ use upconv::UPConv;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    upconv: UPConv<f32>,
+    upconv: UPConv,
 }
 
 #[derive(Params)]
@@ -160,12 +159,7 @@ impl Plugin for Converb {
             },
         };
 
-        let mut planner = RealFftPlanner::new();
-        let fft = planner.plan_fft_forward(samples.len());
-        let mut out = fft.make_output_vec();
-        fft.process(&mut samples, &mut out).unwrap();
-
-        self.upconv.set_filter(&out);
+        self.upconv.set_filter(&samples);
         true
     }
 
