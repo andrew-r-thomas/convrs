@@ -1,3 +1,4 @@
+mod main;
 pub mod upconv;
 
 use nih_plug::prelude::*;
