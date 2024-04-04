@@ -4,4 +4,5 @@ convrs is an attempt at making a general purpose convolution library for real ti
 
 ## converb
 
-converb is an example [nih-plug](https://github.com/robbert-vdh/nih-plug) plugin that shows convrs being used in a simple convolution reverb
+converb is an example [nih-plug](https://github.com/robbert-vdh/nih-plug) plugin that shows convrs being used in a simple convolution reverb.
+to build it, run `cargo xtask bundle converb`
