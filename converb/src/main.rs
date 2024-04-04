@@ -1,5 +1,5 @@
-use crate::upconv::UPConv;
-use hound::{self, WavReader};
+use converb::upconv::UPConv;
+use hound::{self, WavReader, WavSpec, WavWriter};
 
 pub fn main() {
     let mut signal_reader = match WavReader::open("../test_audio/test.wav") {
@@ -78,5 +78,23 @@ pub fn main() {
         },
     };
 
-    let upconv = UPConv::new(128, 48000);
+    let mut upconv = UPConv::new(128, 48000);
+
+    let spec = WavSpec {
+        channels: 1,
+        sample_rate: 48000,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+
+    let mut writer = WavWriter::create("test_out.wav", spec).unwrap();
+
+    for sample_chunk in signal_samples.chunks_exact_mut(128) {
+        let out = upconv.process_block(sample_chunk);
+        for o in out {
+            writer.write_sample(*o).unwrap();
+        }
+    }
+
+    writer.finalize().unwrap();
 }
