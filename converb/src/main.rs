@@ -137,7 +137,7 @@ pub fn main() {
     println!("signal rate: {}", signal_reader.spec().sample_rate);
 
     let spec = WavSpec {
-        channels: 1,
+        channels: 2,
         sample_rate: 48000,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
