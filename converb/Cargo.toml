@@ -7,9 +7,6 @@ license = "GPL-3.0-or-later"
 homepage = "https://andrewrthomas.com"
 description = "a simple convolution reverb"
 
-[workspace]
-members = ["xtask"]
-
 [lib]
 crate-type = ["cdylib", "lib"]
 
@@ -21,15 +18,5 @@ hound = "3.5.1"
 realfft = "3.3.0"
 num = "0.4.1"
 rubato = "0.15.0"
-# Uncomment the below line to disable the on-by-default VST3 feature to remove
-# the GPL compatibility requirement
-# nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", default_features = false, features = ["assert_process_allocs"] }
+convrs = { path = "../" }
 
-[profile.release]
-lto = "thin"
-strip = "symbols"
-
-[profile.profiling]
-inherits = "release"
-debug = true
-strip = "none"

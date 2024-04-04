@@ -1,11 +1,10 @@
-pub mod upconv;
+use convrs::upconv::UPConv;
 
 use nih_plug::prelude::*;
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
 use std::sync::Arc;
-use upconv::UPConv;
 
 // This is a shortened version of the gain example with most comments removed, check out
 // https://github.com/robbert-vdh/nih-plug/blob/master/plugins/examples/gain/src/lib.rs to get

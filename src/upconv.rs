@@ -1,5 +1,5 @@
+use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
-use realfft::{FftError, RealFftPlanner};
 use std::sync::Arc;
 
 pub struct UPConv {
