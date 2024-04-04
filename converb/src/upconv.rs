@@ -1,4 +1,3 @@
-use nih_plug::nih_log;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
 use realfft::{FftError, RealFftPlanner};
 use std::sync::Arc;
@@ -32,7 +31,6 @@ impl UPConv {
         let new_spectrum_buff = fft.make_output_vec();
 
         let p = max_filter_size.div_ceil(block_size);
-        nih_log!("our max p is: {}", p);
         let filter = Vec::with_capacity(p);
 
         let fdl = vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p];
@@ -86,24 +84,15 @@ impl UPConv {
             vec![Complex { re: 0.0, im: 0.0 }; self.block_size + 1];
             self.p - filter_len
         ]);
-
-        // nih_log!("filter len: {}", self.filter.len());
-        // for chunk in &self.filter {
-        //     nih_log!("chunk len: {}", chunk.len());
-        // }
     }
 
     pub fn process_block(&mut self, block: &mut [f32]) -> &[f32] {
-        // nih_log!("block len: {}", block.len());
-
         self.input_buffer
             .copy_within(self.block_size..self.block_size * 2, 0);
         self.input_buffer[self.block_size..self.block_size * 2].copy_from_slice(block);
 
         self.input_fft_buff[0..self.block_size * 2]
             .copy_from_slice(&self.input_buffer[0..self.block_size * 2]);
-
-        // nih_log!("input_buffer: {:?}", self.input_buffer);
 
         self.fft
             .process_with_scratch(
@@ -121,36 +110,22 @@ impl UPConv {
             .copy_from_slice(&self.new_spectrum_buff);
 
         self.fdl.rotate_right(1);
-        // nih_log!("first few fdl vals");
-        // for i in 0..5 {
-        //     nih_log!("at index: {}\n val: {:?}", i, self.fdl[i])
-        // }
 
         self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
 
         self.multiply_blocks();
 
-        match self.ifft.process_with_scratch(
-            &mut self.accumulation_buffer,
-            &mut self.output_fft_buff,
-            &mut [],
-        ) {
-            Ok(_) => {}
-            Err(e) => match e {
-                FftError::InputBuffer(_, _) => nih_log!("upconv ifft error, input buffer"),
-                FftError::OutputBuffer(_, _) => nih_log!("upconv ifft error, output buffer"),
-                FftError::ScratchBuffer(_, _) => nih_log!("upconv ifft error, scratch buffer"),
-                FftError::InputValues(_, _) => nih_log!("upconv ifft error, input values"),
-            },
-        };
+        self.ifft
+            .process_with_scratch(
+                &mut self.accumulation_buffer,
+                &mut self.output_fft_buff,
+                &mut [],
+            )
+            .unwrap();
 
         self.output_buffer.copy_from_slice(&self.output_fft_buff);
 
         self.output_fft_buff.fill(0.0);
-        // nih_log!(
-        //     "going out: {:?}",
-        //     &self.output_buffer[self.block_size..self.block_size * 2]
-        // );
         &self.output_buffer[self.block_size..self.block_size * 2]
     }
 
