@@ -13,7 +13,8 @@ use upconv::UPConv;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    upconv: UPConv,
+    left_upconv: UPConv,
+    right_upconv: UPConv,
 }
 
 #[derive(Params)]
@@ -28,11 +29,13 @@ struct ConverbParams {
 
 impl Default for Converb {
     fn default() -> Self {
-        let upconv = UPConv::new(128, 48000);
+        let left_upconv = UPConv::new(128, 24000);
+        let right_upconv = UPConv::new(128, 24000);
 
         Self {
             params: Arc::new(ConverbParams::default()),
-            upconv,
+            left_upconv,
+            right_upconv,
         }
     }
 }
@@ -182,9 +185,11 @@ impl Plugin for Converb {
             .unwrap();
 
             let new = resampler.process(&vec![&samples], None).unwrap();
-            self.upconv.set_filter(&new[0]);
+            self.left_upconv.set_filter(&new[0]);
+            self.right_upconv.set_filter(&new[0]);
         } else {
-            self.upconv.set_filter(&samples);
+            self.left_upconv.set_filter(&samples);
+            self.right_upconv.set_filter(&samples);
         }
 
         true
@@ -202,11 +207,14 @@ impl Plugin for Converb {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         for (_size, block) in buffer.iter_blocks(128) {
-            let channels = block.into_iter();
-            for channel in channels {
-                let out = self.upconv.process_block(channel);
-                channel.copy_from_slice(out);
-            }
+            let mut channels = block.into_iter();
+            let left_channel = channels.next().unwrap();
+            let right_channel = channels.next().unwrap();
+            let left_out = self.left_upconv.process_block(left_channel);
+            let right_out = self.right_upconv.process_block(right_channel);
+
+            left_channel.copy_from_slice(left_out);
+            right_channel.copy_from_slice(right_out);
         }
 
         ProcessStatus::Normal
