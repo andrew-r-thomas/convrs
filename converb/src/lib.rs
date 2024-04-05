@@ -1,5 +1,5 @@
 use convrs::conv::*;
-use convrs::upconv::UPConv;
+use convrs::upconv::FDL;
 
 use nih_plug::prelude::*;
 use rubato::{
@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    left_upconv: UPConv,
-    right_upconv: UPConv,
+    left_upconv: FDL,
+    right_upconv: FDL,
 }
 
 #[derive(Params)]
@@ -29,8 +29,8 @@ struct ConverbParams {
 
 impl Default for Converb {
     fn default() -> Self {
-        let left_upconv = UPConv::new(128, 24000);
-        let right_upconv = UPConv::new(128, 24000);
+        let left_upconv = FDL::new(128, 24000);
+        let right_upconv = FDL::new(128, 24000);
 
         Self {
             params: Arc::new(ConverbParams::default()),
