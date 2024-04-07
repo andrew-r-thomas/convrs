@@ -1,28 +1,94 @@
-use crossbeam::channel::bounded;
+use core::panic;
 use std::thread;
+
+use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::{partition_table::PARTITIONS_1_128, upconv::UPConv};
 
 pub struct Conv {
     rt_segment: UPConv,
-    filter_len: usize,
+    non_rt_segments: Vec<SegmentHandle>,
     input_buff: Vec<f32>,
     output_buff: Vec<f32>,
+    cycle_count: usize,
+    block_size: usize,
+}
+
+struct SegmentHandle {
+    cycles_per_block: usize,
+    block_size: usize,
+    rt_prod: Producer<f32>,
+    rt_cons: Consumer<f32>,
 }
 
 impl Conv {
     pub fn new(block_size: usize, filter_len: usize) -> Self {
         let partition = PARTITIONS_1_128[filter_len % block_size];
-        let mut workers = vec![];
-        let (sender, receiver) = bounded::<WorkerMessage>(10);
-        for p in &partition[1..] {
-            let r = receiver.clone();
-            let worker_handle = thread::spawn(move || {
-                r.recv().unwrap();
-                let upconv = UPConv::new(p.0, p.0 * p.1);
-            });
+        let mut non_rt_segments = vec![];
+        if partition.len() > 1 {
+            for p in &partition[1..] {
+                // first ring buffer for us so send new blocks
+                // to the worker thread
+                let (mut rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0);
+                // then a ring buffer for us to send result blocks
+                // back to the real time thread
+                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0);
 
-            workers.push((worker_handle, sender.clone()));
+                // fill both of our ring buffers with 0s
+                // so we can pop whenever we push
+                match rt_prod.write_chunk(p.0) {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+                        s1.fill(0.0);
+                        s2.fill(0.0);
+                        w.commit_all();
+                    }
+                    Err(e) => {
+                        // TODO make a better logging system
+                        // base it off of the nih log logging traits
+                        // so that you can use it with that logger easily
+                        println!("{}", e);
+                        panic!();
+                    }
+                }
+                match seg_prod.write_chunk(p.0) {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+                        s1.fill(0.0);
+                        s2.fill(0.0);
+                        w.commit_all();
+                    }
+                    Err(e) => {
+                        // TODO make a better logging system
+                        // base it off of the nih log logging traits
+                        // so that you can use it with that logger easily
+                        println!("{}", e);
+                        panic!();
+                    }
+                }
+
+                thread::spawn(move || {
+                    let _upconv = UPConv::new(p.0, p.0 * p.1);
+                    // TODO a raw loop i feel like is a really bad idea here
+                    // so consider this pseudocode for now
+                    // we are also over working bc we fill everything
+                    // with zeros first, but it makes the code a lot more
+                    // simple so it could be worth it at least for now
+                    loop {
+                        if !seg_cons.is_empty() {
+                            // TODO read from seg cons and do your upconv work here
+                            // then write the new results into the producer
+                        }
+                    }
+                });
+
+                non_rt_segments.push(SegmentHandle {
+                    cycles_per_block: p.0 / block_size,
+                    block_size: p.0,
+                    rt_prod,
+                    rt_cons,
+                });
+            }
         }
 
         let rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0);
@@ -34,19 +100,67 @@ impl Conv {
 
         Self {
             rt_segment,
-            filter_len,
             input_buff,
             output_buff,
+            non_rt_segments,
+            cycle_count: 0,
+            block_size,
         }
     }
 
     pub fn set_filter() {}
 
     pub fn process_block(&mut self, block: &mut [f32]) {
-        let rt_out = self.rt_segment.process_block(block);
-    }
-}
+        self.cycle_count += 1;
 
-enum WorkerMessage {
-    Process,
+        // TODO shift input buffer and put new block in the front
+
+        for segment in &mut self.non_rt_segments {
+            // first we check if its time to send and recieve a new block
+            if segment.cycles_per_block % self.cycle_count == 0 {
+                match segment.rt_cons.read_chunk(segment.block_size) {
+                    Ok(r) => {
+                        let (s1, s2) = r.as_slices();
+                        let s1_len = s1.len();
+                        let s2_len = s2.len();
+                        for (f, s) in s1.iter().zip(&mut self.output_buff[0..s1_len]) {
+                            *s += *f;
+                        }
+                        for (f, s) in s2.iter().zip(&mut self.output_buff[0..s2_len]) {
+                            *s += f;
+                        }
+                    }
+                    Err(e) => {
+                        // TODO, again, good logging setup
+                        println!("{}", e);
+                        panic!();
+                    }
+                }
+
+                match segment.rt_prod.write_chunk(segment.block_size) {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+                        let s1_len = s1.len();
+                        let s2_len = s2.len();
+                        for (f, s) in s1.iter_mut().zip(&self.input_buff[0..s1_len]) {
+                            *f = *s;
+                        }
+                        for (f, s) in s2.iter_mut().zip(&self.input_buff[0..s2_len]) {
+                            *f = *s;
+                        }
+                    }
+                    Err(e) => {
+                        // TODO logging
+                        println!("{}", e);
+                        panic!();
+                    }
+                }
+            }
+        }
+
+        let rt_out = self.rt_segment.process_block(block);
+        for (n, o) in rt_out.iter().zip(&mut self.output_buff[0..self.block_size]) {
+            *o += *n;
+        }
+    }
 }

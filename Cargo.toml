@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 crossbeam = "0.8.4"
 realfft = "3.3.0"
+rtrb = "0.3.0"
 
 [workspace]
 members = ["converb", "xtask"]
