@@ -21,8 +21,14 @@ struct SegmentHandle {
 }
 
 impl Conv {
-    pub fn new(block_size: usize, filter_len: usize) -> Self {
+    pub fn new(block_size: usize, filter_len: usize, filter: &[f32]) -> Self {
         let partition = PARTITIONS_1_128[filter_len % block_size];
+        let mut filter_index = 0;
+
+        let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0);
+        rt_segment.set_filter(&filter[0..(partition[0].0 * partition[0].1)]);
+        filter_index += partition[0].0 * partition[0].1;
+
         let mut non_rt_segments = vec![];
         if partition.len() > 1 {
             for p in &partition[1..] {
@@ -31,7 +37,7 @@ impl Conv {
                 let (mut rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0);
                 // then a ring buffer for us to send result blocks
                 // back to the real time thread
-                let (mut seg_prod, mut rt_cons) = RingBuffer::<f32>::new(p.0);
+                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0);
 
                 // fill both of our ring buffers with 0s
                 // so we can pop whenever we push
@@ -65,9 +71,11 @@ impl Conv {
                         panic!();
                     }
                 }
+                let mut upconv = UPConv::new(p.0, p.0 * p.1);
+                upconv.set_filter(&filter[filter_index..(p.0 * p.1)]);
+                filter_index += p.0 * p.1;
 
                 thread::spawn(move || {
-                    let mut upconv = UPConv::new(p.0, p.0 * p.1);
                     // TODO a raw loop i feel like is a really bad idea here
                     // so consider this pseudocode for now
                     // we are also over working bc we fill everything
@@ -77,9 +85,10 @@ impl Conv {
                         if !seg_cons.is_empty() {
                             match seg_cons.read_chunk(p.0) {
                                 Ok(r) => {
-                                    let (s1, s2) = r.as_slices();
-                                    let out =
-                                        upconv.process_block([s1, s2].concat().as_mut_slice());
+                                    let out = {
+                                        let (s1, s2) = r.as_slices();
+                                        upconv.process_block([s1, s2].concat().as_mut_slice())
+                                    };
                                     match seg_prod.write_chunk(p.0) {
                                         Ok(mut w) => {
                                             let (s1, s2) = w.as_mut_slices();
@@ -113,8 +122,6 @@ impl Conv {
                 });
             }
         }
-
-        let rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0);
 
         let input_buff =
             Vec::with_capacity(partition.last().unwrap().0 * partition.last().unwrap().1);
