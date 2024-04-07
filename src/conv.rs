@@ -1,4 +1,3 @@
-use core::panic;
 use std::thread;
 
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -29,10 +28,10 @@ impl Conv {
             for p in &partition[1..] {
                 // first ring buffer for us so send new blocks
                 // to the worker thread
-                let (mut rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0);
+                let (mut rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0);
                 // then a ring buffer for us to send result blocks
                 // back to the real time thread
-                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0);
+                let (mut seg_prod, mut rt_cons) = RingBuffer::<f32>::new(p.0);
 
                 // fill both of our ring buffers with 0s
                 // so we can pop whenever we push
@@ -68,7 +67,7 @@ impl Conv {
                 }
 
                 thread::spawn(move || {
-                    let _upconv = UPConv::new(p.0, p.0 * p.1);
+                    let mut upconv = UPConv::new(p.0, p.0 * p.1);
                     // TODO a raw loop i feel like is a really bad idea here
                     // so consider this pseudocode for now
                     // we are also over working bc we fill everything
@@ -76,8 +75,32 @@ impl Conv {
                     // simple so it could be worth it at least for now
                     loop {
                         if !seg_cons.is_empty() {
-                            // TODO read from seg cons and do your upconv work here
-                            // then write the new results into the producer
+                            match seg_cons.read_chunk(p.0) {
+                                Ok(r) => {
+                                    let (s1, s2) = r.as_slices();
+                                    let out =
+                                        upconv.process_block([s1, s2].concat().as_mut_slice());
+                                    match seg_prod.write_chunk(p.0) {
+                                        Ok(mut w) => {
+                                            let (s1, s2) = w.as_mut_slices();
+                                            // TODO change all the other ones of these to copies
+                                            s1.copy_from_slice(&out[0..s1.len()]);
+                                            s2.copy_from_slice(&out[s1.len()..s1.len() + s2.len()]);
+                                            w.commit_all();
+                                        }
+                                        Err(e) => {
+                                            // TODO logging
+                                            println!("{}", e);
+                                            panic!();
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // TODO logging
+                                    println!("{}", e);
+                                    panic!();
+                                }
+                            }
                         }
                     }
                 });
@@ -108,12 +131,16 @@ impl Conv {
         }
     }
 
-    pub fn set_filter() {}
+    pub fn set_filter() {
+        todo!()
+    }
 
     pub fn process_block(&mut self, block: &mut [f32]) {
         self.cycle_count += 1;
 
-        // TODO shift input buffer and put new block in the front
+        let mid = self.input_buff.len() - self.block_size;
+        self.input_buff.rotate_left(mid);
+        self.input_buff[0..self.block_size].copy_from_slice(block);
 
         for segment in &mut self.non_rt_segments {
             // first we check if its time to send and recieve a new block
@@ -129,9 +156,11 @@ impl Conv {
                         for (f, s) in s2.iter().zip(&mut self.output_buff[0..s2_len]) {
                             *s += f;
                         }
+
+                        r.commit_all();
                     }
                     Err(e) => {
-                        // TODO, again, good logging setup
+                        // TODO  , again, good logging setup
                         println!("{}", e);
                         panic!();
                     }
@@ -148,6 +177,8 @@ impl Conv {
                         for (f, s) in s2.iter_mut().zip(&self.input_buff[0..s2_len]) {
                             *f = *s;
                         }
+
+                        w.commit_all();
                     }
                     Err(e) => {
                         // TODO logging
