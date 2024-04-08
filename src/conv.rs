@@ -22,7 +22,8 @@ struct SegmentHandle {
 
 impl Conv {
     pub fn new(block_size: usize, filter_len: usize, filter: &[f32]) -> Self {
-        let partition = PARTITIONS_1_128[filter_len % block_size];
+        // TODO might need some rounding here
+        let partition = PARTITIONS_1_128[filter_len / block_size];
         let mut filter_index = 0;
 
         let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0);
@@ -123,10 +124,15 @@ impl Conv {
             }
         }
 
-        let input_buff =
+        println!("partition: {:?}", partition);
+
+        let mut input_buff =
             Vec::with_capacity(partition.last().unwrap().0 * partition.last().unwrap().1);
-        let output_buff =
+        let mut output_buff =
             Vec::with_capacity(partition.last().unwrap().0 * partition.last().unwrap().1);
+
+        input_buff.fill(0.0);
+        output_buff.fill(0.0);
 
         Self {
             rt_segment,
@@ -142,8 +148,11 @@ impl Conv {
         todo!()
     }
 
-    pub fn process_block(&mut self, block: &mut [f32]) {
+    pub fn process_block(&mut self, block: &mut [f32]) -> &[f32] {
         self.cycle_count += 1;
+
+        println!("input buff len: {}", self.input_buff.len());
+        println!("block_size: {}", self.block_size);
 
         let mid = self.input_buff.len() - self.block_size;
         self.input_buff.rotate_left(mid);
@@ -200,5 +209,7 @@ impl Conv {
         for (n, o) in rt_out.iter().zip(&mut self.output_buff[0..self.block_size]) {
             *o += *n;
         }
+
+        &self.output_buff[0..self.block_size]
     }
 }

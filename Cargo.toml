@@ -21,3 +21,6 @@ strip = "symbols"
 inherits = "release"
 debug = true
 strip = "none"
+
+[dev-dependencies]
+hound = "3.5.1"
