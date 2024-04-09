@@ -23,7 +23,8 @@ struct SegmentHandle {
 impl Conv {
     pub fn new(block_size: usize, filter_len: usize, filter: &[f32]) -> Self {
         // TODO might need some rounding here
-        let partition = PARTITIONS_1_128[filter_len / block_size];
+        // let partition = PARTITIONS_1_128[filter_len / block_size];
+        let partition = &[(128, 22), (1024, 21), (8192, 8)];
         let mut filter_index = 0;
 
         let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0);
@@ -35,10 +36,10 @@ impl Conv {
             for p in &partition[1..] {
                 // first ring buffer for us so send new blocks
                 // to the worker thread
-                let (mut rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0);
+                let (mut rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0 * 2);
                 // then a ring buffer for us to send result blocks
                 // back to the real time thread
-                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0);
+                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 2);
 
                 // fill both of our ring buffers with 0s
                 // so we can pop whenever we push
@@ -73,7 +74,7 @@ impl Conv {
                     }
                 }
                 let mut upconv = UPConv::new(p.0, p.0 * p.1);
-                upconv.set_filter(&filter[filter_index..(p.0 * p.1)]);
+                upconv.set_filter(&filter[filter_index..(p.0 * p.1).min(filter.len())]);
                 filter_index += p.0 * p.1;
 
                 thread::spawn(move || {
@@ -90,6 +91,8 @@ impl Conv {
                                         let (s1, s2) = r.as_slices();
                                         upconv.process_block([s1, s2].concat().as_mut_slice())
                                     };
+                                    r.commit_all();
+
                                     match seg_prod.write_chunk(p.0) {
                                         Ok(mut w) => {
                                             let (s1, s2) = w.as_mut_slices();
@@ -100,6 +103,10 @@ impl Conv {
                                         }
                                         Err(e) => {
                                             // TODO logging
+                                            println!(
+                                                "error writing buff in segment with partition: {:?}",
+                                                p
+                                            );
                                             println!("{}", e);
                                             panic!();
                                         }
@@ -124,12 +131,10 @@ impl Conv {
             }
         }
 
-        println!("partition: {:?}", partition);
-
-        let mut input_buff =
-            Vec::with_capacity(partition.last().unwrap().0 * partition.last().unwrap().1);
-        let mut output_buff =
-            Vec::with_capacity(partition.last().unwrap().0 * partition.last().unwrap().1);
+        let mut input_buff: Vec<f32> =
+            vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1];
+        let mut output_buff: Vec<f32> =
+            vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1];
 
         input_buff.fill(0.0);
         output_buff.fill(0.0);
@@ -151,16 +156,13 @@ impl Conv {
     pub fn process_block(&mut self, block: &mut [f32]) -> &[f32] {
         self.cycle_count += 1;
 
-        println!("input buff len: {}", self.input_buff.len());
-        println!("block_size: {}", self.block_size);
-
         let mid = self.input_buff.len() - self.block_size;
         self.input_buff.rotate_left(mid);
         self.input_buff[0..self.block_size].copy_from_slice(block);
 
         for segment in &mut self.non_rt_segments {
             // first we check if its time to send and recieve a new block
-            if segment.cycles_per_block % self.cycle_count == 0 {
+            if self.cycle_count % segment.cycles_per_block == 0 {
                 match segment.rt_cons.read_chunk(segment.block_size) {
                     Ok(r) => {
                         let (s1, s2) = r.as_slices();
@@ -177,6 +179,10 @@ impl Conv {
                     }
                     Err(e) => {
                         // TODO  , again, good logging setup
+                        println!(
+                            "error reading from segment with block size: {:?}",
+                            segment.block_size
+                        );
                         println!("{}", e);
                         panic!();
                     }
@@ -198,6 +204,10 @@ impl Conv {
                     }
                     Err(e) => {
                         // TODO logging
+                        println!(
+                            "error writing to segment with block size: {:?}",
+                            segment.block_size
+                        );
                         println!("{}", e);
                         panic!();
                     }
