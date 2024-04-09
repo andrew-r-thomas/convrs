@@ -45,6 +45,7 @@ mod tests {
                 _ => panic!(),
             },
         };
+        println!("fitler sample len: {}", filter_samples.len());
 
         let signal_bits = signal_reader.spec().bits_per_sample;
         let mut signal_samples: Vec<f32> = Vec::with_capacity(signal_reader.len() as usize);
