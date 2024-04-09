@@ -11,12 +11,6 @@ mod tests {
             hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/piano.wav")
                 .unwrap();
 
-        println!("{}", filter_reader.spec().sample_rate);
-        println!("{}", signal_reader.spec().sample_rate);
-
-        println!("{}", filter_reader.spec().bits_per_sample);
-        println!("{}", signal_reader.spec().bits_per_sample);
-
         let filter_bits = filter_reader.spec().bits_per_sample;
         let mut filter_samples: Vec<f32> = Vec::with_capacity(filter_reader.len() as usize);
         match filter_reader.spec().sample_format {
