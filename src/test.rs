@@ -7,7 +7,7 @@ mod tests {
     #[test]
     fn main_test() {
         let mut filter_reader =
-            hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/other.wav")
+            hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav")
                 .unwrap();
         let mut signal_reader =
             hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/piano.wav")
@@ -88,13 +88,15 @@ mod tests {
         };
 
         let mut writer = hound::WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_other.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/somebs.wav",
             writer_spec,
         )
         .unwrap();
 
         let mut left_conv = NoThreadConv::new(128, filter_samples.len(), &filter_samples);
         let mut right_conv = NoThreadConv::new(128, filter_samples.len(), &filter_samples);
+        // left_conv.set_filter(&filter_samples);
+        // right_conv.set_filter(&filter_samples);
 
         for chunk in signal_samples.chunks_exact(128 * 2) {
             let mut left = vec![];
