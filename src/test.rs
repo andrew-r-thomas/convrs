@@ -2,12 +2,12 @@
 mod tests {
     use std::{thread, time::Duration};
 
-    use crate::conv::Conv;
+    use crate::{conv::Conv, non_thread::NoThreadConv, upconv::UPConv};
 
     #[test]
     fn main_test() {
         let mut filter_reader =
-            hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav")
+            hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/other.wav")
                 .unwrap();
         let mut signal_reader =
             hound::WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/piano.wav")
@@ -88,13 +88,13 @@ mod tests {
         };
 
         let mut writer = hound::WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_other.wav",
             writer_spec,
         )
         .unwrap();
 
-        let mut left_conv = Conv::new(128, filter_samples.len(), &filter_samples);
-        let mut right_conv = Conv::new(128, filter_samples.len(), &filter_samples);
+        let mut left_conv = NoThreadConv::new(128, filter_samples.len(), &filter_samples);
+        let mut right_conv = NoThreadConv::new(128, filter_samples.len(), &filter_samples);
 
         for chunk in signal_samples.chunks_exact(128 * 2) {
             let mut left = vec![];
