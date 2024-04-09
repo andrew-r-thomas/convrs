@@ -160,6 +160,10 @@ impl Conv {
         self.input_buff.rotate_left(mid);
         self.input_buff[0..self.block_size].copy_from_slice(block);
 
+        self.output_buff.rotate_right(self.block_size);
+        let output_len = self.output_buff.len();
+        self.output_buff[output_len - self.block_size..output_len].fill(0.0);
+
         for segment in &mut self.non_rt_segments {
             // first we check if its time to send and recieve a new block
             if self.cycle_count % segment.cycles_per_block == 0 {

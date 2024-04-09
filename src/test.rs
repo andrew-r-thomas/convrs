@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use std::{thread, time::Duration};
+
     use crate::conv::Conv;
 
     #[test]
@@ -112,6 +114,7 @@ mod tests {
                 writer.write_sample(*l).unwrap();
                 writer.write_sample(*r).unwrap();
             }
+            // thread::sleep(Duration::from_secs(1));
         }
 
         writer.finalize().unwrap();
