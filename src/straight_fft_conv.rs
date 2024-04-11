@@ -1,6 +1,6 @@
 use realfft::{num_complex::Complex, RealFftPlanner};
 
-pub fn straight_fft_conv(signal: Vec<f32>, filter: &Vec<f32>) -> Vec<f32> {
+pub fn straight_fft_conv(signal: &[f32], filter: &[f32]) -> Vec<f32> {
     let mut planner = RealFftPlanner::<f32>::new();
     let fft_len = (filter.len() * 2).max(signal.len() * 2);
     let fft = planner.plan_fft_forward(fft_len);

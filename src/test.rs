@@ -123,7 +123,7 @@ mod tests {
         };
 
         let mut writer = hound::WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_straightfft_realylong.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_stackedfft_realylong.wav",
             writer_spec,
         )
         .unwrap();
@@ -149,12 +149,34 @@ mod tests {
         //     // thread::sleep(Duration::from_secs(1));
         // }
 
-        let left_out = straight_fft_conv(signal_samples_left, &filter_samples);
-        let right_out = straight_fft_conv(signal_samples_right, &filter_samples);
+        let first = &filter_samples[0..4096];
+        let second = &filter_samples[4096..];
 
-        for (l, r) in left_out.iter().zip(right_out) {
+        let left_first = straight_fft_conv(&signal_samples_left, &first);
+        let right_first = straight_fft_conv(&signal_samples_right, &first);
+
+        let left_second = straight_fft_conv(&signal_samples_left, &second);
+        let right_second = straight_fft_conv(&signal_samples_right, &second);
+
+        let left_out = {
+            let mut out = vec![];
+            for (f, s) in left_first.iter().zip(&left_second) {
+                out.push(f + s);
+            }
+            out
+        };
+
+        let right_out = {
+            let mut out = vec![];
+            for (f, s) in right_first.iter().zip(&right_second) {
+                out.push(f + s);
+            }
+            out
+        };
+
+        for (l, r) in left_out.iter().zip(&right_out) {
             writer.write_sample(*l).unwrap();
-            writer.write_sample(r).unwrap();
+            writer.write_sample(*r).unwrap();
         }
 
         writer.finalize().unwrap();
