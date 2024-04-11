@@ -123,7 +123,7 @@ mod tests {
         };
 
         let mut writer = hound::WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_stackedfft_realylong.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_weirdstacked_realylong.wav",
             writer_spec,
         )
         .unwrap();
@@ -152,27 +152,60 @@ mod tests {
         let first = &filter_samples[0..4096];
         let second = &filter_samples[4096..];
 
-        let left_first = straight_fft_conv(&signal_samples_left, &first);
-        let right_first = straight_fft_conv(&signal_samples_right, &first);
+        // let left_first = straight_fft_conv(&signal_samples_left, &first);
+        // let right_first = straight_fft_conv(&signal_samples_right, &first);
 
-        let left_second = straight_fft_conv(&signal_samples_left, &second);
-        let right_second = straight_fft_conv(&signal_samples_right, &second);
+        // let left_second = straight_fft_conv(&signal_samples_left, &second);
+        // let right_second = straight_fft_conv(&signal_samples_right, &second);
 
-        let left_out = {
-            let mut out = vec![];
-            for (f, s) in left_first.iter().zip(&left_second) {
-                out.push(f + s);
+        let mut left_first = UPConv::new(128, first.len());
+        let mut right_first = UPConv::new(128, first.len());
+        let mut left_second = UPConv::new(512, second.len());
+        let mut right_second = UPConv::new(512, second.len());
+
+        left_first.set_filter(&first);
+        right_first.set_filter(&first);
+        left_second.set_filter(&second);
+        right_second.set_filter(&second);
+
+        let mut left_out = vec![0.0; signal_samples_left.len()];
+        let mut right_out = vec![0.0; signal_samples_left.len()];
+
+        let mut i = 0;
+        for chunk in signal_samples_left.chunks_exact_mut(128) {
+            let out = left_first.process_block(chunk);
+            for j in 0..128 {
+                left_out[j + i] += out[j];
             }
-            out
-        };
+            i += 128;
+        }
 
-        let right_out = {
-            let mut out = vec![];
-            for (f, s) in right_first.iter().zip(&right_second) {
-                out.push(f + s);
+        i = 0;
+        for chunk in signal_samples_left.chunks_exact_mut(512) {
+            let out = left_second.process_block(chunk);
+            for j in 0..512 {
+                left_out[j + i] += out[j];
             }
-            out
-        };
+            i += 512;
+        }
+
+        i = 0;
+        for chunk in signal_samples_right.chunks_exact_mut(128) {
+            let out = right_first.process_block(chunk);
+            for j in 0..128 {
+                right_out[j + i] += out[j];
+            }
+            i += 128;
+        }
+
+        i = 0;
+        for chunk in signal_samples_right.chunks_exact_mut(512) {
+            let out = right_second.process_block(chunk);
+            for j in 0..512 {
+                right_out[j + i] += out[j];
+            }
+            i += 512;
+        }
 
         for (l, r) in left_out.iter().zip(&right_out) {
             writer.write_sample(*l).unwrap();
