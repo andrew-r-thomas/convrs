@@ -86,7 +86,7 @@ impl UPConv {
         ]);
     }
 
-    pub fn process_block(&mut self, block: &mut [f32]) -> &[f32] {
+    pub fn process_block(&mut self, block: &[f32]) -> &[f32] {
         self.input_buffer
             .copy_within(self.block_size..self.block_size * 2, 0);
         self.input_buffer[self.block_size..self.block_size * 2].copy_from_slice(block);

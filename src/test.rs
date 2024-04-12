@@ -115,103 +115,56 @@ mod tests {
             },
         };
 
-        let writer_spec = hound::WavSpec {
-            channels: 2,
-            sample_rate: 48000,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
+        let mut first = UPConv::new(128, filter_samples.len());
+        let mut second = UPConv::new(512, filter_samples.len());
+        let mut third = UPConv::new(1024, filter_samples.len());
+        let mut fourth = UPConv::new(2048, filter_samples.len());
+        let mut fifth = UPConv::new(4096, filter_samples.len());
 
-        let mut writer = hound::WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/piano_out_weirdstacked_realylong.wav",
-            writer_spec,
-        )
-        .unwrap();
+        first.set_filter(&filter_samples);
+        second.set_filter(&filter_samples);
+        third.set_filter(&filter_samples);
+        fourth.set_filter(&filter_samples);
+        fifth.set_filter(&filter_samples);
 
-        // let mut left_conv = NoThreadConv::new(128, filter_samples.len(), &filter_samples);
-        // let mut right_conv = NoThreadConv::new(128, filter_samples.len(), &filter_samples);
-        // let mut left_conv = UPConv::new(128, filter_samples.len());
-        // let mut right_conv = UPConv::new(128, filter_samples.len());
-        // left_conv.set_filter(&filter_samples);
-        // right_conv.set_filter(&filter_samples);
+        let mut first_out: Vec<f32> = vec![];
+        let mut second_out: Vec<f32> = vec![];
+        let mut third_out: Vec<f32> = vec![];
+        let mut fourth_out: Vec<f32> = vec![];
+        let mut fifth_out: Vec<f32> = vec![];
 
-        // for (lchunk, rchunk) in signal_samples_left
-        //     .chunks_exact_mut(128)
-        //     .zip(signal_samples_right.chunks_exact_mut(128))
-        // {
-        //     let left_out: &[f32] = left_conv.process_block(lchunk);
-        //     let right_out: &[f32] = right_conv.process_block(rchunk);
+        let mut data = vec![
+            (&mut first, &mut first_out, 128),
+            (&mut second, &mut second_out, 512),
+            (&mut third, &mut third_out, 1024),
+            (&mut fourth, &mut fourth_out, 2048),
+            (&mut fifth, &mut fifth_out, 4096),
+        ];
 
-        //     for (l, r) in left_out.iter().zip(right_out) {
-        //         writer.write_sample(*l).unwrap();
-        //         writer.write_sample(*r).unwrap();
-        //     }
-        //     // thread::sleep(Duration::from_secs(1));
-        // }
-
-        let first = &filter_samples[0..4096];
-        let second = &filter_samples[4096..];
-
-        // let left_first = straight_fft_conv(&signal_samples_left, &first);
-        // let right_first = straight_fft_conv(&signal_samples_right, &first);
-
-        // let left_second = straight_fft_conv(&signal_samples_left, &second);
-        // let right_second = straight_fft_conv(&signal_samples_right, &second);
-
-        let mut left_first = UPConv::new(128, first.len());
-        let mut right_first = UPConv::new(128, first.len());
-        let mut left_second = UPConv::new(512, second.len());
-        let mut right_second = UPConv::new(512, second.len());
-
-        left_first.set_filter(&first);
-        right_first.set_filter(&first);
-        left_second.set_filter(&second);
-        right_second.set_filter(&second);
-
-        let mut left_out = vec![0.0; signal_samples_left.len()];
-        let mut right_out = vec![0.0; signal_samples_left.len()];
-
-        let mut i = 0;
-        for chunk in signal_samples_left.chunks_exact_mut(128) {
-            let out = left_first.process_block(chunk);
-            for j in 0..128 {
-                left_out[j + i] += out[j];
+        for (conv, out, size) in &mut data {
+            for chunk in signal_samples_left.chunks_exact_mut(*size) {
+                let out_chunk = conv.process_block(chunk);
+                for i in 0..out_chunk.len() {
+                    out.push(out_chunk[i] / (*size / 128) as f32);
+                }
             }
-            i += 128;
         }
 
-        i = 0;
-        for chunk in signal_samples_left.chunks_exact_mut(512) {
-            let out = left_second.process_block(chunk);
-            for j in 0..512 {
-                left_out[j + i] += out[j];
+        let control = data[0].1.clone();
+
+        for (_, out, size) in &mut data {
+            let mut diff: Vec<f32> = vec![];
+            for (c, d) in control.iter().zip(out.as_slice()) {
+                diff.push(d / c);
             }
-            i += 512;
-        }
 
-        i = 0;
-        for chunk in signal_samples_right.chunks_exact_mut(128) {
-            let out = right_first.process_block(chunk);
-            for j in 0..128 {
-                right_out[j + i] += out[j];
+            let mut avg = 0.0;
+            for d in &diff {
+                avg += d;
             }
-            i += 128;
-        }
+            avg /= diff.len() as f32;
 
-        i = 0;
-        for chunk in signal_samples_right.chunks_exact_mut(512) {
-            let out = right_second.process_block(chunk);
-            for j in 0..512 {
-                right_out[j + i] += out[j];
-            }
-            i += 512;
+            println!("size {} diff {:?}", size, avg);
         }
-
-        for (l, r) in left_out.iter().zip(&right_out) {
-            writer.write_sample(*l).unwrap();
-            writer.write_sample(*r).unwrap();
-        }
-
-        writer.finalize().unwrap();
     }
 }
