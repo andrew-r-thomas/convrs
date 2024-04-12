@@ -117,18 +117,8 @@ mod tests {
             },
         };
 
-        let mut first_left = UPConv::new(128, filter_samples.len());
-        let mut first_right = UPConv::new(128, filter_samples.len());
-        let mut second_left = UPConv::new(512, filter_samples.len());
-        let mut second_right = UPConv::new(512, filter_samples.len());
-
-        let first = &filter_samples[0..4096];
-        let second = &filter_samples[4096..];
-
-        first_left.set_filter(&first);
-        first_right.set_filter(&first);
-        second_left.set_filter(&second);
-        second_right.set_filter(&second);
+        let mut left = NoThreadConv::new(128, &signal_samples_left);
+        let mut right = NoThreadConv::new(128, &signal_samples_right);
 
         let spec = WavSpec {
             channels: 2,
@@ -138,53 +128,22 @@ mod tests {
         };
 
         let mut writer = WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/7.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/8.wav",
             spec,
         )
         .unwrap();
 
-        let mut left_out = vec![0.0; signal_samples_left.len() + 4096];
-        let mut right_out = vec![0.0; signal_samples_right.len() + 4096];
+        for (left_chunk, right_chunk) in signal_samples_left
+            .chunks_exact(128)
+            .zip(signal_samples_right.chunks_exact(128))
+        {
+            let left_out = left.process_block(left_chunk);
+            let right_out = right.process_block(right_chunk);
 
-        let mut i = 0;
-        for chunk in signal_samples_left.chunks_exact(128) {
-            let out = first_left.process_block(chunk);
-            for j in 0..128 {
-                left_out[j + i] += out[j];
+            for (l, r) in left_out.iter().zip(right_out) {
+                writer.write_sample(*l).unwrap();
+                writer.write_sample(*r).unwrap();
             }
-            i += 128;
-        }
-
-        i = 0;
-        for chunk in signal_samples_right.chunks_exact(128) {
-            let out = first_right.process_block(chunk);
-            for j in 0..128 {
-                right_out[j + i] += out[j];
-            }
-            i += 128;
-        }
-
-        i = 4096;
-        for chunk in signal_samples_left.chunks_exact(512) {
-            let out = second_left.process_block(chunk);
-            for j in 0..512 {
-                left_out[j + i] += out[j] / (512 / 128) as f32;
-            }
-            i += 512;
-        }
-
-        i = 4096;
-        for chunk in signal_samples_right.chunks_exact(512) {
-            let out = second_right.process_block(chunk);
-            for j in 0..512 {
-                right_out[j + i] += out[j] / (512 / 128) as f32;
-            }
-            i += 512;
-        }
-
-        for (l, r) in left_out.iter().zip(&right_out) {
-            writer.write_sample(*l).unwrap();
-            writer.write_sample(*r).unwrap();
         }
 
         writer.finalize().unwrap();
