@@ -82,7 +82,7 @@ impl NoThreadConv {
     pub fn process_block(&mut self, block: &[f32]) -> &[f32] {
         self.cycle_count += 1;
         self.input_buff
-            .copy_within(self.buff_len - self.block_size..self.buff_len, 0);
+            .copy_within(self.block_size..self.buff_len, 0);
         self.input_buff[self.buff_len - self.block_size..self.buff_len].copy_from_slice(block);
 
         self.output_buff
@@ -98,8 +98,14 @@ impl NoThreadConv {
                 segment.buff.extend(out);
             }
             if self.cycle_count >= segment.offset
-                && (self.cycle_count - segment.offset) % segment.block_size == 0
+                && (self.cycle_count - segment.offset) % segment.avail == 0
             {
+                println!("cycle count: {}", self.cycle_count);
+                println!("segment avail: {}", segment.avail);
+                println!(
+                    "doing pop on segment with block size: {}",
+                    segment.block_size
+                );
                 for o in &mut self.output_buff[0..segment.block_size] {
                     // gain adjustment based on block size
                     let s = segment.buff.pop_front().unwrap();

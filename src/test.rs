@@ -117,8 +117,8 @@ mod tests {
             },
         };
 
-        let mut left = NoThreadConv::new(128, &signal_samples_left);
-        let mut right = NoThreadConv::new(128, &signal_samples_right);
+        let mut left = NoThreadConv::new(128, &filter_samples);
+        let mut right = NoThreadConv::new(128, &filter_samples);
 
         let spec = WavSpec {
             channels: 2,
@@ -128,7 +128,7 @@ mod tests {
         };
 
         let mut writer = WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/8.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/12.wav",
             spec,
         )
         .unwrap();
