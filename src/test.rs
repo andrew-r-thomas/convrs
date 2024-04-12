@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
 
+    use hound::{WavSpec, WavWriter};
+
     use crate::{
         conv::Conv, non_thread::NoThreadConv, straight_fft_conv::straight_fft_conv, upconv::UPConv,
     };
@@ -115,56 +117,76 @@ mod tests {
             },
         };
 
-        let mut first = UPConv::new(128, filter_samples.len());
-        let mut second = UPConv::new(512, filter_samples.len());
-        let mut third = UPConv::new(1024, filter_samples.len());
-        let mut fourth = UPConv::new(2048, filter_samples.len());
-        let mut fifth = UPConv::new(4096, filter_samples.len());
+        let mut first_left = UPConv::new(128, filter_samples.len());
+        let mut first_right = UPConv::new(128, filter_samples.len());
+        let mut second_left = UPConv::new(512, filter_samples.len());
+        let mut second_right = UPConv::new(512, filter_samples.len());
 
-        first.set_filter(&filter_samples);
-        second.set_filter(&filter_samples);
-        third.set_filter(&filter_samples);
-        fourth.set_filter(&filter_samples);
-        fifth.set_filter(&filter_samples);
+        let first = &filter_samples[0..4096];
+        let second = &filter_samples[4096..];
 
-        let mut first_out: Vec<f32> = vec![];
-        let mut second_out: Vec<f32> = vec![];
-        let mut third_out: Vec<f32> = vec![];
-        let mut fourth_out: Vec<f32> = vec![];
-        let mut fifth_out: Vec<f32> = vec![];
+        first_left.set_filter(&first);
+        first_right.set_filter(&first);
+        second_left.set_filter(&second);
+        second_right.set_filter(&second);
 
-        let mut data = vec![
-            (&mut first, &mut first_out, 128),
-            (&mut second, &mut second_out, 512),
-            (&mut third, &mut third_out, 1024),
-            (&mut fourth, &mut fourth_out, 2048),
-            (&mut fifth, &mut fifth_out, 4096),
-        ];
+        let spec = WavSpec {
+            channels: 2,
+            sample_rate: 48000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
 
-        for (conv, out, size) in &mut data {
-            for chunk in signal_samples_left.chunks_exact_mut(*size) {
-                let out_chunk = conv.process_block(chunk);
-                for i in 0..out_chunk.len() {
-                    out.push(out_chunk[i] / (*size / 128) as f32);
-                }
+        let mut writer = WavWriter::create(
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/7.wav",
+            spec,
+        )
+        .unwrap();
+
+        let mut left_out = vec![0.0; signal_samples_left.len() + 4096];
+        let mut right_out = vec![0.0; signal_samples_right.len() + 4096];
+
+        let mut i = 0;
+        for chunk in signal_samples_left.chunks_exact(128) {
+            let out = first_left.process_block(chunk);
+            for j in 0..128 {
+                left_out[j + i] += out[j];
             }
+            i += 128;
         }
 
-        let control = data[0].1.clone();
-
-        for (_, out, size) in &mut data {
-            let mut diff: Vec<f32> = vec![];
-            for (c, d) in control.iter().zip(out.as_slice()) {
-                diff.push(d / c);
+        i = 0;
+        for chunk in signal_samples_right.chunks_exact(128) {
+            let out = first_right.process_block(chunk);
+            for j in 0..128 {
+                right_out[j + i] += out[j];
             }
-
-            let mut avg = 0.0;
-            for d in &diff {
-                avg += d;
-            }
-            avg /= diff.len() as f32;
-
-            println!("size {} diff {:?}", size, avg);
+            i += 128;
         }
+
+        i = 4096;
+        for chunk in signal_samples_left.chunks_exact(512) {
+            let out = second_left.process_block(chunk);
+            for j in 0..512 {
+                left_out[j + i] += out[j] / (512 / 128) as f32;
+            }
+            i += 512;
+        }
+
+        i = 4096;
+        for chunk in signal_samples_right.chunks_exact(512) {
+            let out = second_right.process_block(chunk);
+            for j in 0..512 {
+                right_out[j + i] += out[j] / (512 / 128) as f32;
+            }
+            i += 512;
+        }
+
+        for (l, r) in left_out.iter().zip(&right_out) {
+            writer.write_sample(*l).unwrap();
+            writer.write_sample(*r).unwrap();
+        }
+
+        writer.finalize().unwrap();
     }
 }
