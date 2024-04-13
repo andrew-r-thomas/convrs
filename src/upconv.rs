@@ -14,11 +14,12 @@ pub struct UPConv {
     fdl: Vec<Vec<Complex<f32>>>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
+    channels: usize,
     p: usize,
 }
 
 impl UPConv {
-    pub fn new(block_size: usize, max_filter_size: usize) -> Self {
+    pub fn new(block_size: usize, max_filter_size: usize, channels: usize) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
         let ifft = planner.plan_fft_inverse(block_size * 2);
@@ -47,14 +48,12 @@ impl UPConv {
             fdl,
             accumulation_buffer,
             new_spectrum_buff,
+            channels,
             p,
         }
     }
 
-    // NOTE
-    // right now this takes in complex values,
-    // which means the conversion should be done by the user,
-    // this might not be the ideal way to do this
+    // TODO
     // need to figure out how to make sure this is either real time safe
     // or not real time safe and clearly stated, or sectioned off
     pub fn set_filter(&mut self, new_filter: &[f32]) {
@@ -86,7 +85,9 @@ impl UPConv {
         ]);
     }
 
-    pub fn process_block(&mut self, block: &[f32]) -> &[f32] {
+    pub fn process_block(&mut self, block: &[&[f32]]) {
+        assert!(block.len() == self.channels);
+
         self.input_buffer
             .copy_within(self.block_size..self.block_size * 2, 0);
         self.input_buffer[self.block_size..self.block_size * 2].copy_from_slice(block);
