@@ -1,5 +1,4 @@
-use convrs::conv::*;
-use convrs::upconv::UPConv;
+use convrs::{conv::Conv, upconv::UPConv};
 
 use nih_plug::prelude::*;
 use rubato::{
@@ -13,8 +12,8 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    left_upconv: UPConv,
-    right_upconv: UPConv,
+    left_upconv: Conv,
+    right_upconv: Conv,
 }
 
 #[derive(Params)]
@@ -29,8 +28,51 @@ struct ConverbParams {
 
 impl Default for Converb {
     fn default() -> Self {
-        let left_upconv = UPConv::new(128, 24000);
-        let right_upconv = UPConv::new(128, 24000);
+        let mut reader = match hound::WavReader::open(
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/realylong.wav",
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                nih_log!("{}", e);
+                panic!()
+            }
+        };
+
+        let bits = reader.spec().bits_per_sample;
+        let mut samples: Vec<f32> = Vec::with_capacity(reader.len() as usize);
+        match reader.spec().sample_format {
+            hound::SampleFormat::Float => {
+                for s in reader.samples::<f32>() {
+                    samples.push(s.unwrap());
+                }
+            }
+            hound::SampleFormat::Int => match bits {
+                8 => {
+                    for s in reader.samples::<i8>() {
+                        samples.push(s.unwrap() as f32 / i8::MAX as f32);
+                    }
+                }
+                16 => {
+                    for s in reader.samples::<i16>() {
+                        samples.push(s.unwrap() as f32 / i16::MAX as f32);
+                    }
+                }
+                24 => {
+                    for s in reader.samples::<i32>() {
+                        samples.push(s.unwrap() as f32 / i32::MAX as f32);
+                    }
+                }
+                32 => {
+                    for s in reader.samples::<i32>() {
+                        samples.push(s.unwrap() as f32 / i32::MAX as f32);
+                    }
+                }
+                _ => panic!(),
+            },
+        };
+
+        let left_upconv = Conv::new(128, &samples);
+        let right_upconv = Conv::new(128, &samples);
 
         Self {
             params: Arc::new(ConverbParams::default()),
@@ -117,81 +159,6 @@ impl Plugin for Converb {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
-        // Resize buffers and perform other potentially expensive initialization operations here.
-        // The `reset()` function is always called right after this function. You can remove this
-        // function if you do not need it.
-        nih_log!("initializing");
-        nih_log!("sample rate: {}", buffer_config.sample_rate);
-
-        let mut reader = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/converb/IRs/shortsweet.wav",
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                nih_log!("{}", e);
-                panic!()
-            }
-        };
-        nih_log!("filter sample rate: {}", reader.spec().sample_rate);
-
-        let bits = reader.spec().bits_per_sample;
-        let mut samples: Vec<f32> = Vec::with_capacity(reader.len() as usize);
-        match reader.spec().sample_format {
-            hound::SampleFormat::Float => {
-                for s in reader.samples::<f32>() {
-                    samples.push(s.unwrap());
-                }
-            }
-            hound::SampleFormat::Int => match bits {
-                8 => {
-                    for s in reader.samples::<i8>() {
-                        samples.push(s.unwrap() as f32 / i8::MAX as f32);
-                    }
-                }
-                16 => {
-                    for s in reader.samples::<i16>() {
-                        samples.push(s.unwrap() as f32 / i16::MAX as f32);
-                    }
-                }
-                24 => {
-                    for s in reader.samples::<i32>() {
-                        samples.push(s.unwrap() as f32 / i32::MAX as f32);
-                    }
-                }
-                32 => {
-                    for s in reader.samples::<i32>() {
-                        samples.push(s.unwrap() as f32 / i32::MAX as f32);
-                    }
-                }
-                _ => panic!(),
-            },
-        };
-
-        if reader.spec().sample_rate as f32 != buffer_config.sample_rate {
-            let params = SincInterpolationParameters {
-                sinc_len: 256,
-                f_cutoff: 0.95,
-                oversampling_factor: 256,
-                interpolation: SincInterpolationType::Linear,
-                window: WindowFunction::BlackmanHarris,
-            };
-            let mut resampler = SincFixedIn::<f32>::new(
-                buffer_config.sample_rate as f64 / reader.spec().sample_rate as f64,
-                2.0,
-                params,
-                256,
-                1,
-            )
-            .unwrap();
-
-            let new = resampler.process(&vec![&samples], None).unwrap();
-            self.left_upconv.set_filter(&new[0]);
-            self.right_upconv.set_filter(&new[0]);
-        } else {
-            self.left_upconv.set_filter(&samples);
-            self.right_upconv.set_filter(&samples);
-        }
-
         true
     }
 

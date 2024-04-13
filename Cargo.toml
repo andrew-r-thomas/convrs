@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+crossbeam = "0.8.4"
 realfft = "3.3.0"
+rtrb = "0.3.0"
 
 [workspace]
 members = ["converb", "xtask"]
@@ -19,3 +21,6 @@ strip = "symbols"
 inherits = "release"
 debug = true
 strip = "none"
+
+[dev-dependencies]
+hound = "3.5.1"
