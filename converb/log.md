@@ -29,3 +29,8 @@
 14:10:57 [INFO] converb: initializing
 14:10:57 [INFO] converb: sample rate: 48000
 14:10:57 [INFO] converb: filter sample rate: 48000
+08:59:24 [TRACE] (6) nih_plug::wrapper::vst3::wrapper: [/Users/andrewthomas/.cargo/git/checkouts/nih-plug-a2d2dc277b128e13/bb27497/src/wrapper/vst3/wrapper.rs:486] Saved state (61 bytes)
+08:59:24 [TRACE] (6) nih_plug::wrapper::vst3::wrapper: [/Users/andrewthomas/.cargo/git/checkouts/nih-plug-a2d2dc277b128e13/bb27497/src/wrapper/vst3/wrapper.rs:486] Saved state (61 bytes)
+09:00:49 [TRACE] (6) nih_plug::wrapper::vst3::wrapper: [/Users/andrewthomas/.cargo/git/checkouts/nih-plug-a2d2dc277b128e13/bb27497/src/wrapper/vst3/wrapper.rs:486] Saved state (61 bytes)
+09:01:00 [TRACE] (6) nih_plug::wrapper::vst3::wrapper: [/Users/andrewthomas/.cargo/git/checkouts/nih-plug-a2d2dc277b128e13/bb27497/src/wrapper/vst3/wrapper.rs:486] Saved state (61 bytes)
+09:01:00 [TRACE] (6) nih_plug::wrapper::vst3::wrapper: [/Users/andrewthomas/.cargo/git/checkouts/nih-plug-a2d2dc277b128e13/bb27497/src/wrapper/vst3/wrapper.rs:486] Saved state (61 bytes)

@@ -4,6 +4,8 @@ use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 // use crate::{partition_table::PARTITIONS_1_128, upconv::UPConv};
 
+// TODO move channels to here
+// TODO sample rate conversions for filters
 pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
