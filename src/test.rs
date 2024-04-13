@@ -128,7 +128,7 @@ mod tests {
         };
 
         let mut writer = WavWriter::create(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/12.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/scratch/14.wav",
             spec,
         )
         .unwrap();

@@ -100,13 +100,11 @@ impl NoThreadConv {
             if self.cycle_count >= segment.offset
                 && (self.cycle_count - segment.offset) % segment.avail == 0
             {
-                println!("cycle count: {}", self.cycle_count);
-                println!("segment avail: {}", segment.avail);
-                println!(
-                    "doing pop on segment with block size: {}",
-                    segment.block_size
-                );
-                for o in &mut self.output_buff[0..segment.block_size] {
+                for o in
+                    // deadline is one block ahead of the current one
+                    &mut self.output_buff
+                        [self.block_size..self.block_size + segment.block_size]
+                {
                     // gain adjustment based on block size
                     let s = segment.buff.pop_front().unwrap();
                     *o += s / (segment.block_size / self.block_size) as f32;
