@@ -43,10 +43,10 @@ impl<'blocks> Conv {
                 // TODO figure out the correct ringbuf length based on the offset
                 // first ring buffer for us so send new blocks
                 // to the worker thread
-                let (rt_prod, mut seg_cons) = RingBuffer::<&[f32]>::new(p.0 * 1000);
+                let (rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
                 // then a ring buffer for us to send result blocks
                 // back to the real time thread
-                let (mut seg_prod, rt_cons) = RingBuffer::<&[f32]>::new(p.0 * 1000);
+                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
 
                 let mut upconv = UPConv::new(p.0, p.0 * p.1, channels);
                 upconv.set_filter(
@@ -59,19 +59,24 @@ impl<'blocks> Conv {
                     // so consider this pseudocode for now
                     loop {
                         if !seg_cons.is_empty() {
-                            match seg_cons.read_chunk(channels) {
+                            match seg_cons.read_chunk(p.0 * channels) {
                                 Ok(r) => {
-                                    let out = {
-                                        let (s1, s2) = r.as_slices();
-                                        upconv.process_block([s1, s2].concat())
-                                    };
+                                    // TODO
+                                    // ok right now we are just righting the channels in a row
+                                    // and repacking things to suit needs
+                                    // definitely needs a refactor but should work probably
+                                    let (s1, s2) = r.as_slices();
+                                    let total = [s1, s2].concat();
+                                    let out = (0..channels).map(|i| &mut total[i..i + p.0]);
+                                    upconv.process_block(out);
                                     r.commit_all();
 
-                                    match seg_prod.write_chunk(p.0) {
+                                    match seg_prod.write_chunk(p.0 * channels) {
                                         Ok(mut w) => {
                                             let (s1, s2) = w.as_mut_slices();
-                                            s1.copy_from_slice(&out.into_iter()[0..s1.len()]);
-                                            s2.copy_from_slice(&out[s1.len()..s1.len() + s2.len()]);
+                                            let o: Vec<f32> = out.flatten().map(|x| *x).collect();
+                                            s1.copy_from_slice(&o[0..s1.len()]);
+                                            s2.copy_from_slice(&o[s1.len()..s1.len() + s2.len()]);
                                             w.commit_all();
                                         }
                                         Err(e) => {
@@ -138,10 +143,7 @@ impl<'blocks> Conv {
         todo!()
     }
 
-    pub fn process_block(
-        &mut self,
-        block: impl IntoIterator<Item = &'blocks [f32]>,
-    ) -> impl IntoIterator<Item = &[f32]> {
+    pub fn process_block(&mut self, block: impl IntoIterator<Item = &'blocks mut [f32]>) {
         self.cycle_count += 1;
 
         self.input_buff
