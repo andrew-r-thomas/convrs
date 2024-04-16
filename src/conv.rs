@@ -10,8 +10,8 @@ pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
     buff_len: usize,
-    input_buff: Vec<f32>,
-    output_buff: Vec<f32>,
+    input_buffs: Vec<Vec<f32>>,
+    output_buffs: Vec<Vec<f32>>,
     cycle_count: usize,
     block_size: usize,
 }
@@ -25,14 +25,14 @@ struct SegmentHandle {
 }
 
 impl Conv {
-    pub fn new(block_size: usize, filter: &[f32]) -> Self {
+    pub fn new(block_size: usize, filter: &[f32], channels: usize) -> Self {
         // TODO make this not hard coded
         // our filter len is 206400
         // our partition len total is 212736
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
         let mut filter_index = 0;
 
-        let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0);
+        let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0, channels);
         rt_segment.set_filter(&filter[0..(partition[0].0 * partition[0].1)]);
         filter_index += partition[0].0 * partition[0].1;
 
@@ -48,7 +48,7 @@ impl Conv {
                 // back to the real time thread
                 let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000);
 
-                let mut upconv = UPConv::new(p.0, p.0 * p.1);
+                let mut upconv = UPConv::new(p.0, p.0 * p.1, channels);
                 upconv.set_filter(
                     &filter[filter_index..(p.0 * p.1 + filter_index).min(filter.len())],
                 );
@@ -110,19 +110,23 @@ impl Conv {
 
         // TODO this might be more buffer than we need,
         // we might need just the last block size plus the main block size
-        let mut input_buff: Vec<f32> =
-            vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1 * 2];
-        let mut output_buff: Vec<f32> =
-            vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1 * 2];
+        let mut input_buffs =
+            vec![
+                vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1 * 2];
+                channels
+            ];
+        let mut output_buffs =
+            vec![
+                vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1 * 2];
+                channels
+            ];
 
-        input_buff.fill(0.0);
-        output_buff.fill(0.0);
-        let buff_len = input_buff.len();
+        let buff_len = input_buffs.first().unwrap().len();
 
         Self {
             rt_segment,
-            input_buff,
-            output_buff,
+            input_buffs,
+            output_buffs,
             non_rt_segments,
             cycle_count: 0,
             block_size,

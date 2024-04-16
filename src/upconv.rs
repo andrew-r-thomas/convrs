@@ -19,7 +19,7 @@ pub struct UPConv {
     p: usize,
 }
 
-impl UPConv {
+impl<'blocks> UPConv {
     pub fn new(block_size: usize, max_filter_size: usize, channels: usize) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
@@ -96,13 +96,12 @@ impl UPConv {
 
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
     /// so there will be one block size slice of samples per channel in block
-    pub fn process_block(&mut self, channel_blocks: &[&[f32]]) -> impl Iterator<Item = &[f32]> {
-        assert!(channel_blocks.len() == self.channels);
-
+    pub fn process_block(&mut self, channel_blocks: impl IntoIterator<Item = &'blocks mut [f32]>) {
+        let mut blocks = channel_blocks.into_iter();
         // move the inputs over by one block and add the new block on the end
         for i in 0..self.channels {
             let buff = &mut self.input_buffs[i];
-            let block = channel_blocks[i];
+            let block = blocks.next().unwrap();
             let fdl = &mut self.fdls[i];
             assert!(self.filter.len() == fdl.len());
             let out = &mut self.output_buffs[i];
@@ -143,10 +142,8 @@ impl UPConv {
                 )
                 .unwrap();
 
-            out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
+            block.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
         }
-
-        self.output_buffs.iter().map(|o| o.as_slice())
     }
 }

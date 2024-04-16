@@ -1,9 +1,6 @@
-use convrs::{conv::Conv, upconv::UPConv};
+use convrs::upconv::UPConv;
 
 use nih_plug::prelude::*;
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
 use std::sync::Arc;
 
 // This is a shortened version of the gain example with most comments removed, check out
@@ -12,8 +9,9 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    left_upconv: Conv,
-    right_upconv: Conv,
+    // left_upconv: Conv,
+    // right_upconv: Conv,
+    conv: UPConv,
 }
 
 #[derive(Params)]
@@ -29,7 +27,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/realylong.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -71,13 +69,16 @@ impl Default for Converb {
             },
         };
 
-        let left_upconv = Conv::new(128, &samples);
-        let right_upconv = Conv::new(128, &samples);
+        // let left_upconv = Conv::new(128, &samples);
+        // let right_upconv = Conv::new(128, &samples);
+        let mut conv = UPConv::new(128, samples.len(), 2);
+        conv.set_filter(&samples);
 
         Self {
             params: Arc::new(ConverbParams::default()),
-            left_upconv,
-            right_upconv,
+            // left_upconv,
+            // right_upconv,
+            conv,
         }
     }
 }
@@ -156,7 +157,7 @@ impl Plugin for Converb {
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        buffer_config: &BufferConfig,
+        _buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         true
@@ -174,14 +175,7 @@ impl Plugin for Converb {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         for (_size, block) in buffer.iter_blocks(128) {
-            let mut channels = block.into_iter();
-            let left_channel = channels.next().unwrap();
-            let right_channel = channels.next().unwrap();
-            let left_out = self.left_upconv.process_block(left_channel);
-            let right_out = self.right_upconv.process_block(right_channel);
-
-            left_channel.copy_from_slice(left_out);
-            right_channel.copy_from_slice(right_out);
+            self.conv.process_block(block);
         }
 
         ProcessStatus::Normal
