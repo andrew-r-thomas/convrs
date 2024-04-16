@@ -24,7 +24,7 @@ struct SegmentHandle {
     rt_cons: Consumer<f32>,
 }
 
-impl Conv {
+impl<'blocks> Conv {
     pub fn new(block_size: usize, filter: &[f32], channels: usize) -> Self {
         // TODO make this not hard coded
         // our filter len is 206400
@@ -43,10 +43,10 @@ impl Conv {
                 // TODO figure out the correct ringbuf length based on the offset
                 // first ring buffer for us so send new blocks
                 // to the worker thread
-                let (rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0 * 1000);
+                let (rt_prod, mut seg_cons) = RingBuffer::<&[f32]>::new(p.0 * 1000);
                 // then a ring buffer for us to send result blocks
                 // back to the real time thread
-                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000);
+                let (mut seg_prod, rt_cons) = RingBuffer::<&[f32]>::new(p.0 * 1000);
 
                 let mut upconv = UPConv::new(p.0, p.0 * p.1, channels);
                 upconv.set_filter(
@@ -59,18 +59,18 @@ impl Conv {
                     // so consider this pseudocode for now
                     loop {
                         if !seg_cons.is_empty() {
-                            match seg_cons.read_chunk(p.0) {
+                            match seg_cons.read_chunk(channels) {
                                 Ok(r) => {
                                     let out = {
                                         let (s1, s2) = r.as_slices();
-                                        upconv.process_block([s1, s2].concat().as_mut_slice())
+                                        upconv.process_block([s1, s2].concat())
                                     };
                                     r.commit_all();
 
                                     match seg_prod.write_chunk(p.0) {
                                         Ok(mut w) => {
                                             let (s1, s2) = w.as_mut_slices();
-                                            s1.copy_from_slice(&out[0..s1.len()]);
+                                            s1.copy_from_slice(&out.into_iter()[0..s1.len()]);
                                             s2.copy_from_slice(&out[s1.len()..s1.len() + s2.len()]);
                                             w.commit_all();
                                         }
@@ -138,8 +138,12 @@ impl Conv {
         todo!()
     }
 
-    pub fn process_block(&mut self, block: &[f32]) -> &[f32] {
+    pub fn process_block(
+        &mut self,
+        block: impl IntoIterator<Item = &'blocks [f32]>,
+    ) -> impl IntoIterator<Item = &[f32]> {
         self.cycle_count += 1;
+
         self.input_buff
             .copy_within(self.block_size..self.buff_len, 0);
         self.input_buff[self.buff_len - self.block_size..self.buff_len].copy_from_slice(block);
@@ -219,13 +223,18 @@ impl Conv {
             }
         }
 
-        let rt_out = self
-            .rt_segment
-            .process_block(&mut self.input_buff[self.buff_len - self.block_size..self.buff_len]);
-        for (n, o) in rt_out.iter().zip(&mut self.output_buff[0..self.block_size]) {
-            *o += *n;
+        let rt_out = self.rt_segment.process_block(
+            &mut self
+                .input_buffs
+                .iter()
+                .map(|i| &i[self.buff_len - self.block_size..self.buff_len]),
+        );
+        for (new, out) in rt_out.into_iter().zip(&self.output_buffs) {
+            for (n, o) in new.iter().zip(out) {
+                *o += *n;
+            }
         }
 
-        &self.output_buff[0..self.block_size]
+        self.output_buffs.iter().map(|o| &o[0..self.block_size])
     }
 }
