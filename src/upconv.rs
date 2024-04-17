@@ -91,7 +91,7 @@ impl UPConv {
             .iter_mut()
             .for_each(|n| n.fill(Complex { re: 0.0, im: 0.0 }));
 
-        for (chunk, filter_buff) in filter_iter.zip(&mut self.old_filter) {
+        for (chunk, filter_buff) in filter_iter.zip(&mut self.filter) {
             self.input_fft_buff.fill(0.0);
             self.input_fft_buff[0..chunk.len()].copy_from_slice(chunk);
 

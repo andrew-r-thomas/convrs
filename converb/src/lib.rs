@@ -185,11 +185,6 @@ impl Plugin for Converb {
         true
     }
 
-    fn reset(&mut self) {
-        // Reset buffers and envelopes here. This can be called from the audio thread and may not
-        // allocate. You can remove this function if you do not need it.
-    }
-
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(self.params.clone(), self.params.editor_state.clone())
     }
@@ -201,16 +196,14 @@ impl Plugin for Converb {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         if self.params.filter_1.value() != self.is_filter_1 {
-            self.conv.update_filter(match self.params.filter_1.value() {
-                true => {
-                    self.is_filter_1 = true;
-                    &self.filter_1
-                }
-                false => {
-                    self.is_filter_1 = false;
-                    &self.filter_2
-                }
-            })
+            nih_log!("swapped filters");
+            if self.params.filter_1.value() {
+                self.conv.update_filter(&self.filter_1);
+            } else {
+                self.conv.update_filter(&self.filter_2);
+            }
+
+            self.is_filter_1 = self.params.filter_1.value();
         }
 
         for (_size, mut block) in buffer.iter_blocks(128) {
