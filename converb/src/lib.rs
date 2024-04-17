@@ -1,4 +1,4 @@
-use convrs::{conv::Conv, upconv::UPConv};
+use convrs::conv::Conv;
 
 use nih_plug::prelude::*;
 use std::sync::Arc;

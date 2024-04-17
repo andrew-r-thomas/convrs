@@ -1,3 +1,4 @@
+use nih_plug::nih_log;
 use std::thread;
 
 use crate::upconv::UPConv;
@@ -21,15 +22,13 @@ struct SegmentHandle {
     block_size: usize,
     offset: usize,
     avail: usize,
-    rt_prod: Producer<f32>,
-    rt_cons: Consumer<f32>,
+    rt_prods: Vec<Producer<f32>>,
+    rt_conss: Vec<Consumer<f32>>,
 }
 
-impl<'blocks> Conv {
+impl Conv {
     pub fn new(block_size: usize, filter: &[f32], channels: usize) -> Self {
         // TODO make this not hard coded
-        // our filter len is 206400
-        // our partition len total is 212736
         let partition = &[(128, 22), (1024, 21), (8192, 20)];
         let mut filter_index = 0;
 
@@ -42,12 +41,19 @@ impl<'blocks> Conv {
             let mut offset_samples = partition[0].0 * partition[0].1;
             for p in &partition[1..] {
                 // TODO figure out the correct ringbuf length based on the offset
-                // first ring buffer for us so send new blocks
-                // to the worker thread
-                let (rt_prod, mut seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
-                // then a ring buffer for us to send result blocks
-                // back to the real time thread
-                let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
+                let mut rt_prods = vec![];
+                let mut rt_conss = vec![];
+                let mut seg_conss = vec![];
+                let mut seg_prods = vec![];
+                for _ in 0..channels {
+                    let (rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
+                    let (seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
+
+                    rt_prods.push(rt_prod);
+                    rt_conss.push(rt_cons);
+                    seg_conss.push(seg_cons);
+                    seg_prods.push(seg_prod);
+                }
 
                 let mut upconv = UPConv::new(p.0, p.0 * p.1, channels);
                 upconv.set_filter(
@@ -58,44 +64,49 @@ impl<'blocks> Conv {
                 thread::spawn(move || {
                     // TODO a raw loop i feel like is a really bad idea here
                     // so consider this pseudocode for now
-                    loop {
-                        if !seg_cons.is_empty() {
-                            match seg_cons.read_chunk(p.0 * channels) {
-                                Ok(r) => {
-                                    // TODO
-                                    // ok right now we are just righting the channels in a row
-                                    // and repacking things to suit needs
-                                    // definitely needs a refactor but should work probably
-                                    let (s1, s2) = r.as_slices();
-                                    let total = [s1, s2].concat();
-                                    let slice = (0..channels).map(|i| &total[i..i + p.0]);
-                                    let out = upconv.process_block(slice);
-                                    r.commit_all();
+                    let mut channels_buff = vec![vec![0.0; p.0]; channels];
 
-                                    match seg_prod.write_chunk(p.0 * channels) {
-                                        Ok(mut w) => {
-                                            let (s1, s2) = w.as_mut_slices();
-                                            let o: Vec<f32> =
-                                                out.into_iter().flatten().map(|x| *x).collect();
-                                            s1.copy_from_slice(&o[0..s1.len()]);
-                                            s2.copy_from_slice(&o[s1.len()..s1.len() + s2.len()]);
-                                            w.commit_all();
-                                        }
-                                        Err(e) => {
-                                            // TODO logging
-                                            println!(
-                                                "error writing buff in segment with partition: {:?}",
-                                                p
-                                            );
-                                            println!("{}", e);
-                                            panic!();
-                                        }
+                    loop {
+                        let ready = seg_conss.iter().all(|s| !s.is_empty());
+                        if ready {
+                            for (seg_cons, channel_buff) in
+                                seg_conss.iter_mut().zip(&mut channels_buff)
+                            {
+                                match seg_cons.read_chunk(p.0) {
+                                    Ok(r) => {
+                                        let (s1, s2) = r.as_slices();
+                                        let total = [s1, s2].concat();
+                                        channel_buff.copy_from_slice(total.as_slice());
+                                        r.commit_all();
+                                    }
+                                    Err(e) => {
+                                        // TODO logging
+                                        nih_log!("{}", e);
+                                        panic!();
                                     }
                                 }
-                                Err(e) => {
-                                    // TODO logging
-                                    println!("{}", e);
-                                    panic!();
+                            }
+
+                            let out =
+                                upconv.process_block(channels_buff.iter().map(|c| c.as_slice()));
+
+                            for (seg_prod, o) in seg_prods.iter_mut().zip(out) {
+                                match seg_prod.write_chunk(p.0) {
+                                    Ok(mut w) => {
+                                        let (s1, s2) = w.as_mut_slices();
+                                        s1.copy_from_slice(&o[0..s1.len()]);
+                                        s2.copy_from_slice(&o[s1.len()..s1.len() + s2.len()]);
+                                        w.commit_all();
+                                    }
+                                    Err(e) => {
+                                        // TODO logging
+                                        nih_log!(
+                                            "error writing buff in segment with partition: {:?}",
+                                            p
+                                        );
+                                        nih_log!("{}", e);
+                                        panic!();
+                                    }
                                 }
                             }
                         }
@@ -103,12 +114,11 @@ impl<'blocks> Conv {
                 });
 
                 non_rt_segments.push(SegmentHandle {
-                    // TODO hard coding
-                    avail: p.0 / 128,
-                    offset: offset_samples / 128,
+                    avail: p.0 / block_size,
+                    offset: offset_samples / block_size,
                     block_size: p.0,
-                    rt_prod,
-                    rt_cons,
+                    rt_prods,
+                    rt_conss,
                 });
 
                 offset_samples += p.0 * p.1;
@@ -146,9 +156,9 @@ impl<'blocks> Conv {
         todo!()
     }
 
-    pub fn process_block(
+    pub fn process_block<'block>(
         &mut self,
-        channel_blocks: impl IntoIterator<Item = &'blocks [f32]>,
+        channel_blocks: impl IntoIterator<Item = &'block [f32]>,
     ) -> impl IntoIterator<Item = &[f32]> {
         self.cycle_count += 1;
         let mut blocks = channel_blocks.into_iter();
@@ -167,39 +177,29 @@ impl<'blocks> Conv {
         for segment in &mut self.non_rt_segments {
             // first we check if its time to send and recieve a new block
             if self.cycle_count % segment.avail == 0 {
-                match segment
-                    .rt_prod
-                    .write_chunk(segment.block_size * self.channels)
-                {
-                    Ok(mut w) => {
-                        let (s1, s2) = w.as_mut_slices();
-                        let s1_len = s1.len();
-                        let mut i = 0;
-                        for channel in 0..self.channels {
-                            let to_write = &self.input_buffs[channel]
-                                [self.buff_len - segment.block_size..self.buff_len];
+                for (rt_prod, input) in segment.rt_prods.iter_mut().zip(&mut self.input_buffs) {
+                    match rt_prod.write_chunk(segment.block_size) {
+                        Ok(mut w) => {
+                            let (s1, s2) = w.as_mut_slices();
+                            let s1_len = s1.len();
+                            let s2_len = s2.len();
 
-                            for w in to_write {
-                                if i < s1_len {
-                                    s1[i] = *w;
-                                } else {
-                                    s2[i] = *w;
-                                }
+                            s1.copy_from_slice(
+                                &input[self.buff_len - s1_len - s2_len..self.buff_len - s2_len],
+                            );
+                            s2.copy_from_slice(&input[self.buff_len - s2_len..self.buff_len]);
 
-                                i += 1;
-                            }
+                            w.commit_all();
                         }
-
-                        w.commit_all();
-                    }
-                    Err(e) => {
-                        // TODO logging
-                        println!(
-                            "error writing to segment with block size: {:?}",
-                            segment.block_size
-                        );
-                        println!("{}", e);
-                        panic!();
+                        Err(e) => {
+                            // TODO logging
+                            nih_log!(
+                                "error writing to segment with block size: {:?}",
+                                segment.block_size
+                            );
+                            nih_log!("{}", e);
+                            panic!();
+                        }
                     }
                 }
             }
@@ -207,38 +207,37 @@ impl<'blocks> Conv {
             if self.cycle_count >= segment.offset
                 && (self.cycle_count - segment.offset) % segment.avail == 0
             {
-                match segment
-                    .rt_cons
-                    .read_chunk(segment.block_size * self.channels)
-                {
-                    Ok(r) => {
-                        let (s1, s2) = r.as_slices();
-                        let s1_len = s1.len();
-                        let mut i = 0;
-                        for channel in 0..self.channels {
-                            let to_read = &mut self.output_buffs[channel]
-                                [self.block_size..self.block_size + segment.block_size];
-
-                            for r in to_read {
-                                if i < s1_len {
-                                    *r += s1[i] / (segment.block_size / self.block_size) as f32;
-                                } else {
-                                    *r += s2[i] / (segment.block_size / self.block_size) as f32;
-                                }
-                                i += 1;
+                for (rt_cons, out) in segment.rt_conss.iter_mut().zip(&mut self.output_buffs) {
+                    match rt_cons.read_chunk(segment.block_size) {
+                        Ok(r) => {
+                            let (s1, s2) = r.as_slices();
+                            let s1_len = s1.len();
+                            let s2_len = s2.len();
+                            for (o, s) in out[self.block_size..self.block_size + s1_len]
+                                .iter_mut()
+                                .zip(s1)
+                            {
+                                *o += s / (segment.block_size / self.block_size) as f32;
                             }
-                        }
+                            for (o, s) in out
+                                [self.block_size + s1_len..self.block_size + s1_len + s2_len]
+                                .iter_mut()
+                                .zip(s2)
+                            {
+                                *o += s / (segment.block_size / self.block_size) as f32;
+                            }
 
-                        r.commit_all();
-                    }
-                    Err(e) => {
-                        // TODO  , again, good logging setup
-                        println!(
-                            "error reading from segment with block size: {:?}",
-                            segment.block_size
-                        );
-                        println!("{}", e);
-                        panic!();
+                            r.commit_all();
+                        }
+                        Err(e) => {
+                            // TODO  , again, good logging setup
+                            nih_log!(
+                                "error reading from segment with block size: {:?}",
+                                segment.block_size
+                            );
+                            nih_log!("{}", e);
+                            panic!();
+                        }
                     }
                 }
             }

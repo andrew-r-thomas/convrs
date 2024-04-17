@@ -9,6 +9,7 @@ edition = "2021"
 crossbeam = "0.8.4"
 realfft = "3.3.0"
 rtrb = "0.3.0"
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 
 [workspace]
 members = ["converb", "xtask"]
