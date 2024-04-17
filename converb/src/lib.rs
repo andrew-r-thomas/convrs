@@ -174,8 +174,14 @@ impl Plugin for Converb {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        for (_size, block) in buffer.iter_blocks(128) {
-            self.conv.process_block(block);
+        for (_size, mut block) in buffer.iter_blocks(128) {
+            let map = block.iter_mut().map(|b| &*b);
+            let out = self.conv.process_block(map.into_iter());
+            for (b, o) in block.iter_mut().zip(out) {
+                for (bb, oo) in b.iter_mut().zip(o) {
+                    *bb = *oo;
+                }
+            }
         }
 
         ProcessStatus::Normal

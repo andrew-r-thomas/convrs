@@ -96,7 +96,10 @@ impl<'blocks> UPConv {
 
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
     /// so there will be one block size slice of samples per channel in block
-    pub fn process_block(&mut self, channel_blocks: impl IntoIterator<Item = &'blocks mut [f32]>) {
+    pub fn process_block(
+        &mut self,
+        channel_blocks: impl IntoIterator<Item = &'blocks [f32]>,
+    ) -> impl IntoIterator<Item = &[f32]> {
         let mut blocks = channel_blocks.into_iter();
         // move the inputs over by one block and add the new block on the end
         for i in 0..self.channels {
@@ -142,8 +145,10 @@ impl<'blocks> UPConv {
                 )
                 .unwrap();
 
-            block.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
+            out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
         }
+
+        self.output_buffs.iter().map(|o| o.as_slice())
     }
 }
