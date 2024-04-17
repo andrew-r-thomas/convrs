@@ -1,6 +1,9 @@
-use convrs::conv::Conv;
+pub mod editor;
+
+use convrs::{conv::Conv, upconv::UPConv};
 
 use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
 use std::sync::Arc;
 
 // This is a shortened version of the gain example with most comments removed, check out
@@ -9,25 +12,25 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    // left_upconv: Conv,
-    // right_upconv: Conv,
-    conv: Conv,
+    conv: UPConv,
+    filter_1: Vec<f32>,
+    filter_2: Vec<f32>,
+    is_filter_1: bool,
 }
 
 #[derive(Params)]
 struct ConverbParams {
-    /// The parameter's ID is used to identify the parameter in the wrappred plugin API. As long as
-    /// these IDs remain constant, you can rename and reorder these fields as you wish. The
-    /// parameters are exposed to the host in the same order they were defined. In this case, this
-    /// gain parameter is stored as linear gain while the values are displayed in decibels.
-    #[id = "gain"]
-    pub gain: FloatParam,
+    #[id = "filter 1"]
+    filter_1: BoolParam,
+
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
 }
 
 impl Default for Converb {
     fn default() -> Self {
-        let mut reader = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav",
+        let mut reader_1 = match hound::WavReader::open(
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -36,49 +39,89 @@ impl Default for Converb {
             }
         };
 
-        let bits = reader.spec().bits_per_sample;
-        let mut samples: Vec<f32> = Vec::with_capacity(reader.len() as usize);
-        match reader.spec().sample_format {
+        let bits_1 = reader_1.spec().bits_per_sample;
+        let mut samples_1: Vec<f32> = Vec::with_capacity(reader_1.len() as usize);
+        match reader_1.spec().sample_format {
             hound::SampleFormat::Float => {
-                for s in reader.samples::<f32>() {
-                    samples.push(s.unwrap());
+                for s in reader_1.samples::<f32>() {
+                    samples_1.push(s.unwrap());
                 }
             }
-            hound::SampleFormat::Int => match bits {
+            hound::SampleFormat::Int => match bits_1 {
                 8 => {
-                    for s in reader.samples::<i8>() {
-                        samples.push(s.unwrap() as f32 / i8::MAX as f32);
+                    for s in reader_1.samples::<i8>() {
+                        samples_1.push(s.unwrap() as f32 / i8::MAX as f32);
                     }
                 }
                 16 => {
-                    for s in reader.samples::<i16>() {
-                        samples.push(s.unwrap() as f32 / i16::MAX as f32);
+                    for s in reader_1.samples::<i16>() {
+                        samples_1.push(s.unwrap() as f32 / i16::MAX as f32);
                     }
                 }
                 24 => {
-                    for s in reader.samples::<i32>() {
-                        samples.push(s.unwrap() as f32 / i32::MAX as f32);
+                    for s in reader_1.samples::<i32>() {
+                        samples_1.push(s.unwrap() as f32 / i32::MAX as f32);
                     }
                 }
                 32 => {
-                    for s in reader.samples::<i32>() {
-                        samples.push(s.unwrap() as f32 / i32::MAX as f32);
+                    for s in reader_1.samples::<i32>() {
+                        samples_1.push(s.unwrap() as f32 / i32::MAX as f32);
                     }
                 }
                 _ => panic!(),
             },
         };
-        nih_log!("sample length: {}", samples.len());
 
-        // let left_upconv = Conv::new(128, &samples);
-        // let right_upconv = Conv::new(128, &samples);
-        let conv = Conv::new(128, &samples, 2);
+        let mut reader_2 = match hound::WavReader::open(
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                nih_log!("{}", e);
+                panic!()
+            }
+        };
+
+        let bits_2 = reader_2.spec().bits_per_sample;
+        let mut samples_2: Vec<f32> = Vec::with_capacity(reader_2.len() as usize);
+        match reader_2.spec().sample_format {
+            hound::SampleFormat::Float => {
+                for s in reader_2.samples::<f32>() {
+                    samples_2.push(s.unwrap());
+                }
+            }
+            hound::SampleFormat::Int => match bits_2 {
+                8 => {
+                    for s in reader_2.samples::<i8>() {
+                        samples_2.push(s.unwrap() as f32 / i8::MAX as f32);
+                    }
+                }
+                16 => {
+                    for s in reader_2.samples::<i16>() {
+                        samples_2.push(s.unwrap() as f32 / i16::MAX as f32);
+                    }
+                }
+                24 => {
+                    for s in reader_2.samples::<i32>() {
+                        samples_2.push(s.unwrap() as f32 / i32::MAX as f32);
+                    }
+                }
+                32 => {
+                    for s in reader_2.samples::<i32>() {
+                        samples_2.push(s.unwrap() as f32 / i32::MAX as f32);
+                    }
+                }
+                _ => panic!(),
+            },
+        };
+        let conv = UPConv::new(128, samples_1.len().max(samples_2.len()), &samples_1, 2);
 
         Self {
             params: Arc::new(ConverbParams::default()),
-            // left_upconv,
-            // right_upconv,
             conv,
+            filter_1: samples_1,
+            filter_2: samples_2,
+            is_filter_1: true,
         }
     }
 }
@@ -86,29 +129,8 @@ impl Default for Converb {
 impl Default for ConverbParams {
     fn default() -> Self {
         Self {
-            // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
-            // to treat these kinds of parameters as if we were dealing with decibels. Storing this
-            // as decibels is easier to work with, but requires a conversion for every sample.
-            gain: FloatParam::new(
-                "Gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            // Because the gain parameter is stored as linear gain instead of storing the value as
-            // decibels, we need logarithmic smoothing
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            // There are many predefined formatters we can use here. If the gain was stored as
-            // decibels instead of as a linear gain value, we could have also used the
-            // `.with_step_size(0.1)` function to get internal rounding.
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            filter_1: BoolParam::new("Filter 1", true),
+            editor_state: editor::default_state(),
         }
     }
 }
@@ -168,12 +190,29 @@ impl Plugin for Converb {
         // allocate. You can remove this function if you do not need it.
     }
 
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(self.params.clone(), self.params.editor_state.clone())
+    }
+
     fn process(
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        if self.params.filter_1.value() != self.is_filter_1 {
+            self.conv.update_filter(match self.params.filter_1.value() {
+                true => {
+                    self.is_filter_1 = true;
+                    &self.filter_1
+                }
+                false => {
+                    self.is_filter_1 = false;
+                    &self.filter_2
+                }
+            })
+        }
+
         for (_size, mut block) in buffer.iter_blocks(128) {
             let map = block.iter_mut().map(|b| &*b);
             let out = self.conv.process_block(map.into_iter());

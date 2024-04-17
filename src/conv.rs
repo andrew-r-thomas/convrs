@@ -32,8 +32,13 @@ impl Conv {
         let partition = &[(128, 22), (1024, 21), (8192, 20)];
         let mut filter_index = 0;
 
-        let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0, channels);
-        rt_segment.set_filter(&filter[0..(partition[0].0 * partition[0].1)]);
+        let rt_segment = UPConv::new(
+            partition[0].0,
+            partition[0].1 * partition[0].0,
+            &filter[0..(partition[0].0 * partition[0].1)],
+            channels,
+        );
+
         filter_index += partition[0].0 * partition[0].1;
 
         let mut non_rt_segments = vec![];
@@ -55,10 +60,13 @@ impl Conv {
                     seg_prods.push(seg_prod);
                 }
 
-                let mut upconv = UPConv::new(p.0, p.0 * p.1, channels);
-                upconv.set_filter(
+                let mut upconv = UPConv::new(
+                    p.0,
+                    p.0 * p.1,
                     &filter[filter_index..(p.0 * p.1 + filter_index).min(filter.len())],
+                    channels,
                 );
+
                 filter_index = (filter_index + (p.0 * p.1)).min(filter.len());
 
                 thread::spawn(move || {
@@ -152,7 +160,7 @@ impl Conv {
         }
     }
 
-    pub fn set_filter() {
+    pub fn update_filter() {
         todo!()
     }
 
