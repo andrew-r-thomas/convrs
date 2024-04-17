@@ -1,4 +1,4 @@
-use convrs::upconv::UPConv;
+use convrs::{conv::Conv, upconv::UPConv};
 
 use nih_plug::prelude::*;
 use std::sync::Arc;
@@ -11,7 +11,7 @@ struct Converb {
     params: Arc<ConverbParams>,
     // left_upconv: Conv,
     // right_upconv: Conv,
-    conv: UPConv,
+    conv: Conv,
 }
 
 #[derive(Params)]
@@ -27,7 +27,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -68,11 +68,11 @@ impl Default for Converb {
                 _ => panic!(),
             },
         };
+        nih_log!("sample length: {}", samples.len());
 
         // let left_upconv = Conv::new(128, &samples);
         // let right_upconv = Conv::new(128, &samples);
-        let mut conv = UPConv::new(128, samples.len(), 2);
-        conv.set_filter(&samples);
+        let conv = Conv::new(128, &samples, 2);
 
         Self {
             params: Arc::new(ConverbParams::default()),

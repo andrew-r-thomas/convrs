@@ -30,7 +30,7 @@ impl<'blocks> Conv {
         // TODO make this not hard coded
         // our filter len is 206400
         // our partition len total is 212736
-        let partition = &[(128, 22), (1024, 21), (8192, 23)];
+        let partition = &[(128, 22), (1024, 21), (8192, 20)];
         let mut filter_index = 0;
 
         let mut rt_segment = UPConv::new(partition[0].0, partition[0].1 * partition[0].0, channels);

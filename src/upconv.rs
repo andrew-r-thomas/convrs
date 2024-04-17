@@ -35,10 +35,7 @@ impl<'blocks> UPConv {
             input_buffs.push(fft.make_input_vec());
         }
 
-        let mut output_buffs = vec![];
-        for _ in 0..channels {
-            output_buffs.push(Vec::with_capacity(block_size));
-        }
+        let output_buffs = vec![vec![0.0; block_size]; channels];
 
         let p = max_filter_size.div_ceil(block_size);
         let filter = Vec::with_capacity(p);
