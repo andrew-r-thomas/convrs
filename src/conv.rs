@@ -15,21 +15,28 @@ pub struct Conv {
     output_buffs: Vec<Vec<f32>>,
     cycle_count: usize,
     block_size: usize,
+    first_partition: (usize, usize),
     channels: usize,
 }
 
+// TODO think about where we want to store partition info
+// right now its in a couple of places
 struct SegmentHandle {
     block_size: usize,
     offset: usize,
     avail: usize,
     rt_prods: Vec<Producer<f32>>,
     rt_conss: Vec<Consumer<f32>>,
+    filter_prod: Producer<f32>,
+    partition: (usize, usize),
 }
 
 impl Conv {
     pub fn new(block_size: usize, filter: &[f32], channels: usize) -> Self {
         // TODO make this not hard coded
-        let partition = &[(128, 22), (1024, 21), (8192, 20)];
+        // long len is 182400
+        // long2 len is 230400
+        let partition = vec![(128, 22), (1024, 21), (8192, 26)];
         let mut filter_index = 0;
 
         let rt_segment = UPConv::new(
@@ -44,12 +51,14 @@ impl Conv {
         let mut non_rt_segments = vec![];
         if partition.len() > 1 {
             let mut offset_samples = partition[0].0 * partition[0].1;
-            for p in &partition[1..] {
+            for i in 1..partition.len() {
+                let p = partition[i];
                 // TODO figure out the correct ringbuf length based on the offset
                 let mut rt_prods = vec![];
                 let mut rt_conss = vec![];
                 let mut seg_conss = vec![];
                 let mut seg_prods = vec![];
+                let (filter_prod, mut filter_cons) = RingBuffer::<f32>::new(p.0 * p.1 * 2);
                 for _ in 0..channels {
                     let (rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
                     let (seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
@@ -75,6 +84,17 @@ impl Conv {
                     let mut channels_buff = vec![vec![0.0; p.0]; channels];
 
                     loop {
+                        let filter_swap = !filter_cons.is_empty();
+                        if filter_swap {
+                            match filter_cons.read_chunk(p.0 * p.1) {
+                                Ok(r) => {
+                                    let (s1, s2) = r.as_slices();
+                                    upconv.update_filter(&[s1, s2].concat());
+                                    r.commit_all();
+                                }
+                                Err(_) => todo!(),
+                            }
+                        }
                         let ready = seg_conss.iter().all(|s| !s.is_empty());
                         if ready {
                             for (seg_cons, channel_buff) in
@@ -127,6 +147,8 @@ impl Conv {
                     block_size: p.0,
                     rt_prods,
                     rt_conss,
+                    filter_prod,
+                    partition: p,
                 });
 
                 offset_samples += p.0 * p.1;
@@ -157,11 +179,57 @@ impl Conv {
             block_size,
             buff_len,
             channels,
+            first_partition: *partition.first().unwrap(),
         }
     }
 
-    pub fn update_filter() {
-        todo!()
+    pub fn update_filter(&mut self, new_filter: &[f32]) {
+        let mut filter_index = 0;
+
+        self.rt_segment.update_filter(
+            &new_filter[filter_index
+                ..(self.first_partition.0 * self.first_partition.1).min(new_filter.len())],
+        );
+        filter_index += (self.first_partition.0 * self.first_partition.1).min(new_filter.len());
+
+        // we're relying on the ordering being correct here
+        for seg in &mut self.non_rt_segments {
+            match seg
+                .filter_prod
+                .write_chunk(seg.partition.0 * seg.partition.1)
+            {
+                Ok(mut w) => {
+                    let (s1, s2) = w.as_mut_slices();
+                    s1.fill(0.0);
+                    s2.fill(0.0);
+
+                    let s1_len = s1.len();
+                    let s2_len = s2.len();
+
+                    let filter_chunk = &new_filter[filter_index
+                        ..(filter_index + seg.partition.0 * seg.partition.1).min(new_filter.len())];
+
+                    for (s, f) in s1
+                        .iter_mut()
+                        .zip(&filter_chunk[filter_index..s1_len.min(filter_chunk.len())])
+                    {
+                        *s = *f;
+                    }
+
+                    for (s, f) in s2.iter_mut().zip(
+                        &filter_chunk[(filter_index + s1_len).min(filter_chunk.len())
+                            ..(filter_index + s1_len + s2_len).min(filter_chunk.len())],
+                    ) {
+                        *s = *f;
+                    }
+
+                    w.commit_all();
+                }
+                Err(_) => {
+                    todo!()
+                }
+            }
+        }
     }
 
     pub fn process_block<'block>(

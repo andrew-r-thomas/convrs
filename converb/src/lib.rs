@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    conv: UPConv,
+    conv: Conv,
     filter_1: Vec<f32>,
     filter_2: Vec<f32>,
     is_filter_1: bool,
@@ -30,7 +30,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader_1 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -73,7 +73,7 @@ impl Default for Converb {
         };
 
         let mut reader_2 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -114,7 +114,8 @@ impl Default for Converb {
                 _ => panic!(),
             },
         };
-        let conv = UPConv::new(128, samples_1.len().max(samples_2.len()), &samples_1, 2);
+
+        let conv = Conv::new(128, &samples_1, 2);
 
         Self {
             params: Arc::new(ConverbParams::default()),
