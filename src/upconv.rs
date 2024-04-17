@@ -5,56 +5,61 @@ use std::sync::Arc;
 pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
-    input_buffer: Vec<f32>,
+    input_buffs: Vec<Vec<f32>>,
     input_fft_buff: Vec<f32>,
-    output_buffer: Vec<f32>,
+    output_buffs: Vec<Vec<f32>>,
     output_fft_buff: Vec<f32>,
     block_size: usize,
     filter: Vec<Vec<Complex<f32>>>,
-    fdl: Vec<Vec<Complex<f32>>>,
+    // TODO lol this type just makes me not feel very good about life
+    fdls: Vec<Vec<Vec<Complex<f32>>>>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
+    channels: usize,
     p: usize,
 }
 
-impl UPConv {
-    pub fn new(block_size: usize, max_filter_size: usize) -> Self {
+impl<'blocks> UPConv {
+    pub fn new(block_size: usize, max_filter_size: usize, channels: usize) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
         let ifft = planner.plan_fft_inverse(block_size * 2);
 
-        let input_buffer = fft.make_input_vec();
         let input_fft_buff = fft.make_input_vec();
-        let output_buffer = ifft.make_output_vec();
         let output_fft_buff = ifft.make_output_vec();
         let accumulation_buffer = ifft.make_input_vec();
         let new_spectrum_buff = fft.make_output_vec();
 
+        let mut input_buffs = vec![];
+        for _ in 0..channels {
+            input_buffs.push(fft.make_input_vec());
+        }
+
+        let output_buffs = vec![vec![0.0; block_size]; channels];
+
         let p = max_filter_size.div_ceil(block_size);
         let filter = Vec::with_capacity(p);
 
-        let fdl = vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p];
+        let fdls = vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p]; channels];
 
         Self {
             fft,
             ifft,
             block_size,
-            input_buffer,
+            input_buffs,
             input_fft_buff,
-            output_buffer,
+            output_buffs,
             output_fft_buff,
             filter,
-            fdl,
+            fdls,
             accumulation_buffer,
             new_spectrum_buff,
+            channels,
             p,
         }
     }
 
-    // NOTE
-    // right now this takes in complex values,
-    // which means the conversion should be done by the user,
-    // this might not be the ideal way to do this
+    // TODO
     // need to figure out how to make sure this is either real time safe
     // or not real time safe and clearly stated, or sectioned off
     pub fn set_filter(&mut self, new_filter: &[f32]) {
@@ -86,57 +91,61 @@ impl UPConv {
         ]);
     }
 
-    pub fn process_block(&mut self, block: &[f32]) -> &[f32] {
-        self.input_buffer
-            .copy_within(self.block_size..self.block_size * 2, 0);
-        self.input_buffer[self.block_size..self.block_size * 2].copy_from_slice(block);
+    /// block is a slice of channel slices, as opposed to a slice of sample slices,
+    /// so there will be one block size slice of samples per channel in block
+    pub fn process_block(
+        &mut self,
+        channel_blocks: impl IntoIterator<Item = &'blocks [f32]>,
+    ) -> impl IntoIterator<Item = &[f32]> {
+        let mut blocks = channel_blocks.into_iter();
+        // move the inputs over by one block and add the new block on the end
+        for i in 0..self.channels {
+            let buff = &mut self.input_buffs[i];
+            let block = blocks.next().unwrap();
+            let fdl = &mut self.fdls[i];
+            assert!(self.filter.len() == fdl.len());
+            let out = &mut self.output_buffs[i];
 
-        self.input_fft_buff[0..self.block_size * 2]
-            .copy_from_slice(&self.input_buffer[0..self.block_size * 2]);
+            buff.copy_within(self.block_size..self.block_size * 2, 0);
+            buff[self.block_size..self.block_size * 2].copy_from_slice(block);
+            self.input_fft_buff[0..self.block_size * 2]
+                .copy_from_slice(&buff[0..self.block_size * 2]);
 
-        self.fft
-            .process_with_scratch(
-                &mut self.input_fft_buff,
-                &mut self.new_spectrum_buff,
-                &mut [],
-            )
-            .unwrap();
+            self.fft
+                .process_with_scratch(
+                    &mut self.input_fft_buff,
+                    &mut self.new_spectrum_buff,
+                    &mut [],
+                )
+                .unwrap();
 
-        let fdl_len = self.fdl.len();
+            let fdl_len = fdl.len();
+            fdl.get_mut(fdl_len - 1)
+                .unwrap()
+                .copy_from_slice(&self.new_spectrum_buff);
+            fdl.rotate_right(1);
 
-        self.fdl
-            .get_mut(fdl_len - 1)
-            .unwrap()
-            .copy_from_slice(&self.new_spectrum_buff);
+            self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
+            self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
-        self.fdl.rotate_right(1);
-
-        self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
-
-        self.multiply_blocks();
-
-        self.ifft
-            .process_with_scratch(
-                &mut self.accumulation_buffer,
-                &mut self.output_fft_buff,
-                &mut [],
-            )
-            .unwrap();
-
-        self.output_buffer.copy_from_slice(&self.output_fft_buff);
-
-        self.output_fft_buff.fill(0.0);
-        &self.output_buffer[self.block_size..self.block_size * 2]
-    }
-
-    fn multiply_blocks(&mut self) {
-        self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
-        assert!(self.filter.len() == self.fdl.len());
-
-        for (filter_block, fdl_block) in self.filter.iter().zip(&self.fdl) {
-            for i in 0..self.block_size + 1 {
-                self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
+            for (filter_block, fdl_block) in self.filter.iter().zip(fdl) {
+                for i in 0..self.block_size + 1 {
+                    self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
+                }
             }
+
+            self.ifft
+                .process_with_scratch(
+                    &mut self.accumulation_buffer,
+                    &mut self.output_fft_buff,
+                    &mut [],
+                )
+                .unwrap();
+
+            out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
+            self.output_fft_buff.fill(0.0);
         }
+
+        self.output_buffs.iter().map(|o| o.as_slice())
     }
 }
