@@ -1,6 +1,6 @@
 pub mod editor;
 
-use convrs::{conv::Conv, upconv::UPConv};
+use convrs::upconv::UPConv;
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    conv: Conv,
+    conv: UPConv,
     filter_1: Vec<f32>,
     filter_2: Vec<f32>,
     is_filter_1: bool,
@@ -30,7 +30,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader_1 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -73,7 +73,7 @@ impl Default for Converb {
         };
 
         let mut reader_2 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -115,7 +115,7 @@ impl Default for Converb {
             },
         };
 
-        let conv = Conv::new(128, &samples_1, 2);
+        let conv = UPConv::new(128, samples_1.len().min(samples_2.len()), &samples_1, 2);
 
         Self {
             params: Arc::new(ConverbParams::default()),
@@ -197,7 +197,6 @@ impl Plugin for Converb {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         if self.params.filter_1.value() != self.is_filter_1 {
-            nih_log!("swapped filters");
             if self.params.filter_1.value() {
                 self.conv.update_filter(&self.filter_1);
             } else {

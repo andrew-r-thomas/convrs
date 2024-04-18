@@ -1,11 +1,12 @@
 use nih_plug::nih_log;
 use std::thread;
 
+// TODO ok so we gotta do the ffts for the filters
+// before passing them, or at least not in real time
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 // use crate::{partition_table::PARTITIONS_1_128, upconv::UPConv};
 
-// TODO move channels to here
 // TODO sample rate conversions for filters
 pub struct Conv {
     rt_segment: UPConv,
@@ -28,7 +29,13 @@ struct SegmentHandle {
     rt_prods: Vec<Producer<f32>>,
     rt_conss: Vec<Consumer<f32>>,
     filter_prod: Producer<f32>,
+    message_prod: Producer<Message>,
     partition: (usize, usize),
+}
+
+enum Message {
+    ProcessBlock,
+    NewFilter,
 }
 
 impl Conv {
@@ -59,6 +66,7 @@ impl Conv {
                 let mut seg_conss = vec![];
                 let mut seg_prods = vec![];
                 let (filter_prod, mut filter_cons) = RingBuffer::<f32>::new(p.0 * p.1 * 2);
+                let (message_prod, mut message_cons) = RingBuffer::<Message>::new(10);
                 for _ in 0..channels {
                     let (rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
                     let (seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
@@ -84,59 +92,62 @@ impl Conv {
                     let mut channels_buff = vec![vec![0.0; p.0]; channels];
 
                     loop {
-                        let filter_swap = !filter_cons.is_empty();
-                        if filter_swap {
-                            match filter_cons.read_chunk(p.0 * p.1) {
-                                Ok(r) => {
-                                    let (s1, s2) = r.as_slices();
-                                    upconv.update_filter(&[s1, s2].concat());
-                                    r.commit_all();
-                                }
-                                Err(_) => todo!(),
-                            }
-                        }
-                        let ready = seg_conss.iter().all(|s| !s.is_empty());
-                        if ready {
-                            for (seg_cons, channel_buff) in
-                                seg_conss.iter_mut().zip(&mut channels_buff)
-                            {
-                                match seg_cons.read_chunk(p.0) {
+                        match message_cons.pop() {
+                            Ok(m) => match m {
+                                Message::NewFilter => match filter_cons.read_chunk(p.0 * p.1) {
                                     Ok(r) => {
                                         let (s1, s2) = r.as_slices();
-                                        let total = [s1, s2].concat();
-                                        channel_buff.copy_from_slice(total.as_slice());
+                                        upconv.update_filter(&[s1, s2].concat());
                                         r.commit_all();
                                     }
-                                    Err(e) => {
-                                        // TODO logging
-                                        nih_log!("{}", e);
-                                        panic!();
+                                    Err(_) => panic!(),
+                                },
+                                Message::ProcessBlock => {
+                                    for (seg_cons, channel_buff) in
+                                        seg_conss.iter_mut().zip(&mut channels_buff)
+                                    {
+                                        match seg_cons.read_chunk(p.0) {
+                                            Ok(r) => {
+                                                let (s1, s2) = r.as_slices();
+                                                let total = [s1, s2].concat();
+                                                channel_buff.copy_from_slice(total.as_slice());
+                                                r.commit_all();
+                                            }
+                                            Err(e) => {
+                                                // TODO logging
+                                                nih_log!("{}", e);
+                                                panic!();
+                                            }
+                                        }
                                     }
-                                }
-                            }
 
-                            let out =
-                                upconv.process_block(channels_buff.iter().map(|c| c.as_slice()));
+                                    let out = upconv
+                                        .process_block(channels_buff.iter().map(|c| c.as_slice()));
 
-                            for (seg_prod, o) in seg_prods.iter_mut().zip(out) {
-                                match seg_prod.write_chunk(p.0) {
-                                    Ok(mut w) => {
-                                        let (s1, s2) = w.as_mut_slices();
-                                        s1.copy_from_slice(&o[0..s1.len()]);
-                                        s2.copy_from_slice(&o[s1.len()..s1.len() + s2.len()]);
-                                        w.commit_all();
-                                    }
-                                    Err(e) => {
-                                        // TODO logging
-                                        nih_log!(
+                                    for (seg_prod, o) in seg_prods.iter_mut().zip(out) {
+                                        match seg_prod.write_chunk(p.0) {
+                                            Ok(mut w) => {
+                                                let (s1, s2) = w.as_mut_slices();
+                                                s1.copy_from_slice(&o[0..s1.len()]);
+                                                s2.copy_from_slice(
+                                                    &o[s1.len()..s1.len() + s2.len()],
+                                                );
+                                                w.commit_all();
+                                            }
+                                            Err(e) => {
+                                                // TODO logging
+                                                nih_log!(
                                             "error writing buff in segment with partition: {:?}",
                                             p
                                         );
-                                        nih_log!("{}", e);
-                                        panic!();
+                                                nih_log!("{}", e);
+                                                panic!();
+                                            }
+                                        }
                                     }
                                 }
-                            }
+                            },
+                            Err(_) => {}
                         }
                     }
                 });
@@ -149,6 +160,7 @@ impl Conv {
                     rt_conss,
                     filter_prod,
                     partition: p,
+                    message_prod,
                 });
 
                 offset_samples += p.0 * p.1;
@@ -229,6 +241,11 @@ impl Conv {
                     todo!()
                 }
             }
+
+            match seg.message_prod.push(Message::NewFilter) {
+                Ok(_) => {}
+                Err(_) => panic!(),
+            }
         }
     }
 
@@ -277,6 +294,11 @@ impl Conv {
                             panic!();
                         }
                     }
+                }
+
+                match segment.message_prod.push(Message::ProcessBlock) {
+                    Ok(_) => {}
+                    Err(_) => panic!(),
                 }
             }
 
