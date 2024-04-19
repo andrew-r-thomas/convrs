@@ -203,9 +203,11 @@ impl Plugin for Converb {
     ) -> ProcessStatus {
         if self.params.filter_1.value() != self.is_filter_1 {
             if self.params.filter_1.value() {
-                self.conv.update_filter(&self.filter_1);
+                self.conv
+                    .update_filter(self.filter_1.iter().map(|f| f.as_slice()));
             } else {
-                self.conv.update_filter(&self.filter_2);
+                self.conv
+                    .update_filter(self.filter_2.iter().map(|f| f.as_slice()));
             }
 
             self.is_filter_1 = self.params.filter_1.value();

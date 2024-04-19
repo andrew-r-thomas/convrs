@@ -76,7 +76,7 @@ impl UPConv {
         }
     }
 
-    pub fn update_filter(&mut self, new_filter: &Vec<Complex<f32>>) {
+    pub fn update_filter(&mut self, new_filter: &[Complex<f32>]) {
         self.old_filter
             .iter_mut()
             .for_each(|o| o.fill(Complex { re: 0.0, im: 0.0 }));

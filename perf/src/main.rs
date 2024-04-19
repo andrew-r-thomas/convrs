@@ -43,7 +43,7 @@ fn main() {
     let mut i = 0;
     let mut on_1 = true;
     for chunk in input.chunks_exact(128 * 2) {
-        if i % 10 == 0 {
+        if i % 5 == 0 {
             if on_1 {
                 conv.update_filter(&filter_spectrum_2);
                 on_1 = false;

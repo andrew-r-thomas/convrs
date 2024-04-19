@@ -203,14 +203,18 @@ impl Conv {
         )
     }
 
-    pub fn update_filter(&mut self, new_filter: &Vec<Vec<Complex<f32>>>) {
-        self.rt_segment.update_filter(&new_filter[0]);
+    pub fn update_filter<'filter>(
+        &mut self,
+        new_filter: impl IntoIterator<Item = &'filter [Complex<f32>]>,
+    ) {
+        let mut filter_iter = new_filter.into_iter();
+        self.rt_segment.update_filter(filter_iter.next().unwrap());
 
         // we're relying on the ordering being correct here
-        for (seg, filter_chunk) in self.non_rt_segments.iter_mut().zip(&new_filter[1..]) {
+        for (seg, filter_chunk) in self.non_rt_segments.iter_mut().zip(filter_iter) {
             match seg
                 .filter_prod
-                .write_chunk(seg.partition.0 * seg.partition.1)
+                .write_chunk((seg.partition.0 + 1) * seg.partition.1)
             {
                 Ok(mut w) => {
                     let (s1, s2) = w.as_mut_slices();
