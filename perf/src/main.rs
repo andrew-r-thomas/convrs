@@ -1,4 +1,4 @@
-use convrs::conv::Conv;
+use convrs::{conv::Conv, helpers::process_filter};
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 
 fn main() {
@@ -36,17 +36,19 @@ fn main() {
         .collect();
     println!("input spec: {:?}", input_reader.spec());
 
-    let mut conv = Conv::new(128, &filter_1, 2);
+    let (mut conv, partition) = Conv::new(128, &filter_1, 2);
+    let filter_spectrum_1 = process_filter(&filter_1, &partition);
+    let filter_spectrum_2 = process_filter(&filter_2, &partition);
 
     let mut i = 0;
     let mut on_1 = true;
     for chunk in input.chunks_exact(128 * 2) {
         if i % 10 == 0 {
             if on_1 {
-                conv.update_filter(&filter_2);
+                conv.update_filter(&filter_spectrum_2);
                 on_1 = false;
             } else {
-                conv.update_filter(&filter_1);
+                conv.update_filter(&filter_spectrum_1);
                 on_1 = true;
             }
         }

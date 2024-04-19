@@ -1,9 +1,10 @@
 pub mod editor;
 
-use convrs::upconv::UPConv;
+use convrs::{conv::Conv, helpers::process_filter};
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use num::Complex;
 use std::sync::Arc;
 
 // This is a shortened version of the gain example with most comments removed, check out
@@ -12,10 +13,11 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    conv: UPConv,
-    filter_1: Vec<f32>,
-    filter_2: Vec<f32>,
+    conv: Conv,
+    filter_1: Vec<Vec<Complex<f32>>>,
+    filter_2: Vec<Vec<Complex<f32>>>,
     is_filter_1: bool,
+    partition: Vec<(usize, usize)>,
 }
 
 #[derive(Params)]
@@ -30,7 +32,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader_1 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -73,7 +75,7 @@ impl Default for Converb {
         };
 
         let mut reader_2 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -115,13 +117,16 @@ impl Default for Converb {
             },
         };
 
-        let conv = UPConv::new(128, samples_1.len().min(samples_2.len()), &samples_1, 2);
+        let (conv, partition) = Conv::new(128, &samples_1, 2);
+        let filter_1_spectrums = process_filter(&samples_1, &partition);
+        let filter_2_spectrums = process_filter(&samples_2, &partition);
 
         Self {
             params: Arc::new(ConverbParams::default()),
             conv,
-            filter_1: samples_1,
-            filter_2: samples_2,
+            partition,
+            filter_1: filter_1_spectrums,
+            filter_2: filter_2_spectrums,
             is_filter_1: true,
         }
     }

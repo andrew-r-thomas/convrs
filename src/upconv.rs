@@ -46,7 +46,7 @@ impl UPConv {
 
         let fdls = vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p]; channels];
 
-        let filter_iter = starting_filter.chunks_exact(block_size);
+        let filter_iter = starting_filter.chunks(block_size);
         for (chunk, filter_buff) in filter_iter.zip(&mut filter) {
             input_fft_buff.fill(0.0);
             input_fft_buff[0..chunk.len()].copy_from_slice(chunk);
@@ -76,9 +76,7 @@ impl UPConv {
         }
     }
 
-    pub fn update_filter(&mut self, new_filter: &[f32]) {
-        let filter_iter = new_filter.chunks_exact(self.block_size);
-
+    pub fn update_filter(&mut self, new_filter: &Vec<Complex<f32>>) {
         self.old_filter
             .iter_mut()
             .for_each(|o| o.fill(Complex { re: 0.0, im: 0.0 }));
@@ -91,22 +89,9 @@ impl UPConv {
             .iter_mut()
             .for_each(|n| n.fill(Complex { re: 0.0, im: 0.0 }));
 
-        for (chunk, filter_buff) in filter_iter.zip(&mut self.filter) {
-            self.input_fft_buff.fill(0.0);
-            self.input_fft_buff[0..chunk.len()].copy_from_slice(chunk);
-
-            self.fft
-                .process_with_scratch(
-                    &mut self.input_fft_buff,
-                    &mut self.new_spectrum_buff,
-                    &mut [],
-                )
-                .unwrap();
-
-            filter_buff.copy_from_slice(&self.new_spectrum_buff);
-            self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
+        for (new_chunk, chunk) in new_filter.chunks(self.block_size + 1).zip(&mut self.filter) {
+            chunk[0..new_chunk.len()].copy_from_slice(&new_chunk);
         }
-
         self.needs_fade = true;
     }
 

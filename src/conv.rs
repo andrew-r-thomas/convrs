@@ -1,4 +1,5 @@
 use nih_plug::nih_log;
+use realfft::num_complex::Complex;
 use std::thread;
 
 // TODO ok so we gotta do the ffts for the filters
@@ -16,7 +17,6 @@ pub struct Conv {
     output_buffs: Vec<Vec<f32>>,
     cycle_count: usize,
     block_size: usize,
-    first_partition: (usize, usize),
     channels: usize,
 }
 
@@ -28,7 +28,7 @@ struct SegmentHandle {
     avail: usize,
     rt_prods: Vec<Producer<f32>>,
     rt_conss: Vec<Consumer<f32>>,
-    filter_prod: Producer<f32>,
+    filter_prod: Producer<Complex<f32>>,
     message_prod: Producer<Message>,
     partition: (usize, usize),
 }
@@ -39,7 +39,11 @@ enum Message {
 }
 
 impl Conv {
-    pub fn new(block_size: usize, filter: &[f32], channels: usize) -> Self {
+    pub fn new(
+        block_size: usize,
+        starting_filter: &[f32],
+        channels: usize,
+    ) -> (Self, Vec<(usize, usize)>) {
         // TODO make this not hard coded
         // long len is 182400
         // long2 len is 230400
@@ -49,7 +53,7 @@ impl Conv {
         let rt_segment = UPConv::new(
             partition[0].0,
             partition[0].1 * partition[0].0,
-            &filter[0..(partition[0].0 * partition[0].1)],
+            &starting_filter[0..(partition[0].0 * partition[0].1)],
             channels,
         );
 
@@ -65,7 +69,8 @@ impl Conv {
                 let mut rt_conss = vec![];
                 let mut seg_conss = vec![];
                 let mut seg_prods = vec![];
-                let (filter_prod, mut filter_cons) = RingBuffer::<f32>::new(p.0 * p.1 * 2);
+                let (filter_prod, mut filter_cons) =
+                    RingBuffer::<Complex<f32>>::new((p.0 + 1) * p.1 * 2);
                 let (message_prod, mut message_cons) = RingBuffer::<Message>::new(10);
                 for _ in 0..channels {
                     let (rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
@@ -80,11 +85,12 @@ impl Conv {
                 let mut upconv = UPConv::new(
                     p.0,
                     p.0 * p.1,
-                    &filter[filter_index..(p.0 * p.1 + filter_index).min(filter.len())],
+                    &starting_filter
+                        [filter_index..(p.0 * p.1 + filter_index).min(starting_filter.len())],
                     channels,
                 );
 
-                filter_index = (filter_index + (p.0 * p.1)).min(filter.len());
+                filter_index = (filter_index + (p.0 * p.1)).min(starting_filter.len());
 
                 thread::spawn(move || {
                     // TODO a raw loop i feel like is a really bad idea here
@@ -182,55 +188,48 @@ impl Conv {
 
         let buff_len = input_buffs.first().unwrap().len();
 
-        Self {
-            rt_segment,
-            input_buffs,
-            output_buffs,
-            non_rt_segments,
-            cycle_count: 0,
-            block_size,
-            buff_len,
-            channels,
-            first_partition: *partition.first().unwrap(),
-        }
+        (
+            Self {
+                rt_segment,
+                input_buffs,
+                output_buffs,
+                non_rt_segments,
+                cycle_count: 0,
+                block_size,
+                buff_len,
+                channels,
+            },
+            partition,
+        )
     }
 
-    pub fn update_filter(&mut self, new_filter: &[f32]) {
-        let mut filter_index = 0;
-
-        self.rt_segment.update_filter(
-            &new_filter[filter_index
-                ..(self.first_partition.0 * self.first_partition.1).min(new_filter.len())],
-        );
-        filter_index += (self.first_partition.0 * self.first_partition.1).min(new_filter.len());
+    pub fn update_filter(&mut self, new_filter: &Vec<Vec<Complex<f32>>>) {
+        self.rt_segment.update_filter(&new_filter[0]);
 
         // we're relying on the ordering being correct here
-        for seg in &mut self.non_rt_segments {
+        for (seg, filter_chunk) in self.non_rt_segments.iter_mut().zip(&new_filter[1..]) {
             match seg
                 .filter_prod
                 .write_chunk(seg.partition.0 * seg.partition.1)
             {
                 Ok(mut w) => {
                     let (s1, s2) = w.as_mut_slices();
-                    s1.fill(0.0);
-                    s2.fill(0.0);
+                    s1.fill(Complex { re: 0.0, im: 0.0 });
+                    s2.fill(Complex { re: 0.0, im: 0.0 });
 
                     let s1_len = s1.len();
                     let s2_len = s2.len();
 
-                    let filter_chunk = &new_filter[filter_index
-                        ..(filter_index + seg.partition.0 * seg.partition.1).min(new_filter.len())];
-
                     for (s, f) in s1
                         .iter_mut()
-                        .zip(&filter_chunk[filter_index..s1_len.min(filter_chunk.len())])
+                        .zip(&filter_chunk[0..s1_len.min(filter_chunk.len())])
                     {
                         *s = *f;
                     }
 
                     for (s, f) in s2.iter_mut().zip(
-                        &filter_chunk[(filter_index + s1_len).min(filter_chunk.len())
-                            ..(filter_index + s1_len + s2_len).min(filter_chunk.len())],
+                        &filter_chunk[s1_len.min(filter_chunk.len())
+                            ..(s1_len + s2_len).min(filter_chunk.len())],
                     ) {
                         *s = *f;
                     }
