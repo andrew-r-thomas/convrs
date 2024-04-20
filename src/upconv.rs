@@ -2,8 +2,6 @@ use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
 use std::sync::Arc;
 
-use crate::envelopes::{linear_envelope, FadeDirection};
-
 pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
@@ -12,17 +10,18 @@ pub struct UPConv {
     output_buffs: Vec<Vec<f32>>,
     output_fft_buff: Vec<f32>,
     block_size: usize,
-    filter: Vec<Vec<Complex<f32>>>,
+    filter: Vec<Complex<f32>>,
     // TODO lol this type just makes me not feel very good about life
     fdls: Vec<Vec<Vec<Complex<f32>>>>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
     channels: usize,
-    needs_fade: bool,
-    old_filter: Vec<Vec<Complex<f32>>>,
+    old_filter: (bool, Vec<Complex<f32>>),
 }
 
 impl UPConv {
+    // TODO might be better to just take p as an input, since we're passing
+    // partitions around above this anyway
     pub fn new(
         block_size: usize,
         max_filter_size: usize,
@@ -42,12 +41,13 @@ impl UPConv {
         let output_buffs = vec![vec![0.0; block_size]; channels];
 
         let p = max_filter_size.div_ceil(block_size);
-        let mut filter = vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p];
+        let mut filter = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * p];
+        let old_filter = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * p];
 
         let fdls = vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p]; channels];
 
         let filter_iter = starting_filter.chunks(block_size);
-        for (chunk, filter_buff) in filter_iter.zip(&mut filter) {
+        for (chunk, filter_buff) in filter_iter.zip(&mut filter.chunks_mut(block_size + 1)) {
             input_fft_buff.fill(0.0);
             input_fft_buff[0..chunk.len()].copy_from_slice(chunk);
 
@@ -71,28 +71,18 @@ impl UPConv {
             accumulation_buffer,
             new_spectrum_buff,
             channels,
-            needs_fade: false,
-            old_filter: vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p],
+            old_filter: (false, old_filter),
         }
     }
 
     pub fn update_filter(&mut self, new_filter: &[Complex<f32>]) {
-        self.old_filter
-            .iter_mut()
-            .for_each(|o| o.fill(Complex { re: 0.0, im: 0.0 }));
+        assert!(new_filter.len() == self.filter.len());
+        assert!(self.old_filter.1.len() == self.filter.len());
 
-        for (filter, old) in self.filter.iter().zip(&mut self.old_filter) {
-            old.copy_from_slice(filter);
-        }
+        self.old_filter.1.copy_from_slice(&self.filter);
+        self.old_filter.0 = true;
 
-        self.filter
-            .iter_mut()
-            .for_each(|n| n.fill(Complex { re: 0.0, im: 0.0 }));
-
-        for (new_chunk, chunk) in new_filter.chunks(self.block_size + 1).zip(&mut self.filter) {
-            chunk[0..new_chunk.len()].copy_from_slice(&new_chunk);
-        }
-        self.needs_fade = true;
+        self.filter.copy_from_slice(new_filter);
     }
 
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
@@ -107,7 +97,6 @@ impl UPConv {
             let buff = &mut self.input_buffs[i];
             let block = blocks.next().unwrap();
             let fdl = &mut self.fdls[i];
-            assert!(self.filter.len() == fdl.len());
             let out = &mut self.output_buffs[i];
 
             buff.copy_within(self.block_size..self.block_size * 2, 0);
@@ -132,7 +121,7 @@ impl UPConv {
             self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
             self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
-            for (filter_block, fdl_block) in self.filter.iter().zip(&*fdl) {
+            for (filter_block, fdl_block) in self.filter.chunks(self.block_size + 1).zip(&*fdl) {
                 for i in 0..self.block_size + 1 {
                     self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
                 }
@@ -149,9 +138,13 @@ impl UPConv {
             out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
 
-            if self.needs_fade {
-                for (filter_block, fdl_block) in self.old_filter.iter().zip(&*fdl) {
-                    self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+            if self.old_filter.0 {
+                self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+
+                for (filter_block, fdl_block) in
+                    // NOTE the &* makes me nervous
+                    self.old_filter.1.chunks(self.block_size + 1).zip(&*fdl)
+                {
                     for i in 0..self.block_size + 1 {
                         self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
                     }
@@ -165,20 +158,24 @@ impl UPConv {
                     )
                     .unwrap();
 
-                let mut j = 0;
-                for (i, o) in out
+                let mut i = 0;
+                for (o, f) in out
                     .iter_mut()
                     .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
                 {
-                    *i *= linear_envelope(j, self.block_size, FadeDirection::FadeIn);
-                    *i += o * linear_envelope(j, self.block_size, FadeDirection::FadeOut);
-                    j += 1;
-                }
+                    if i < self.block_size / 4 {
+                        *o = *f;
+                    } else if i < self.block_size * (3 / 4) {
+                        *o *= ((i - (self.block_size / 4)) / self.block_size) as f32;
+                        *o += f * (1 - ((i - (self.block_size / 4)) / self.block_size)) as f32;
+                    }
 
-                self.needs_fade = false;
+                    i += 1;
+                }
             }
         }
 
+        self.old_filter.0 = false;
         self.output_buffs.iter().map(|o| o.as_slice())
     }
 }
