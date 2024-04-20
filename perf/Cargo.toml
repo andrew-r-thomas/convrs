@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 convrs = { path = "../" }
 hound = "3.5.1"
+realfft = "3.3.0"

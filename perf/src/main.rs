@@ -1,13 +1,14 @@
-use convrs::{conv::Conv, helpers::process_filter};
+use convrs::{conv::Conv, helpers::process_filter, upconv::UPConv};
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
+use realfft::num_complex::Complex;
 
 fn main() {
     let mut filter_1_reader =
-        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav").unwrap();
+        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav").unwrap();
     let mut filter_2_reader =
-        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav").unwrap();
+        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav").unwrap();
     let mut input_reader =
-        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/piano.wav").unwrap();
+        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/c3sine.wav").unwrap();
 
     let output_spec = WavSpec {
         channels: 2,
@@ -16,7 +17,7 @@ fn main() {
         sample_format: SampleFormat::Float,
     };
     let mut output_writer = WavWriter::create(
-        "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/perf_out_piano.wav",
+        "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/uhh_out_c3sine.wav",
         output_spec,
     )
     .unwrap();
@@ -36,14 +37,27 @@ fn main() {
         .collect();
     println!("input spec: {:?}", input_reader.spec());
 
-    let (mut conv, partition) = Conv::new(128, &filter_1, 2);
-    let filter_spectrum_1 = process_filter(&filter_1, &partition);
-    let filter_spectrum_2 = process_filter(&filter_2, &partition);
+    let mut conv = UPConv::new(128, filter_1.len().max(filter_2.len()), &filter_1, 2);
+    let partition = &[(
+        128,
+        (filter_1.len().div_ceil(128)).max(filter_2.len().div_ceil(128)),
+    )];
 
-    let mut i = 0;
+    let filter_spectrum_1: Vec<Complex<f32>> = process_filter(&filter_1, partition)
+        .into_iter()
+        .flatten()
+        .collect();
+
+    let filter_spectrum_2: Vec<Complex<f32>> = process_filter(&filter_2, partition)
+        .into_iter()
+        .flatten()
+        .collect();
+    println!("filter 1 len: {}", filter_spectrum_1.len());
+    println!("filter 2 len: {}", filter_spectrum_2.len());
+
     let mut on_1 = true;
-    for chunk in input.chunks_exact(128 * 2) {
-        if i % 5 == 0 {
+    for (chunk, i) in input.chunks_exact(128 * 2).zip(0..) {
+        if i % 100 == 0 {
             if on_1 {
                 conv.update_filter(&filter_spectrum_2);
                 on_1 = false;
@@ -74,8 +88,6 @@ fn main() {
             output_writer.write_sample(*l).unwrap();
             output_writer.write_sample(*r).unwrap();
         }
-
-        i += 1;
     }
 
     match output_writer.finalize() {
