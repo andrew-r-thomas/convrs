@@ -1,4 +1,4 @@
-use convrs::{conv::Conv, helpers::process_filter, upconv::UPConv};
+use convrs::{conv::Conv, helpers::process_filter, partition::generate_partition, upconv::UPConv};
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use realfft::num_complex::Complex;
 
@@ -17,7 +17,7 @@ fn main() {
         sample_format: SampleFormat::Float,
     };
     let mut output_writer = WavWriter::create(
-        "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/uhh_out_c3sine.wav",
+        "/Users/andrewthomas/dev/diy/convrs/test_sounds/out/multiblock_8_out_c3sine.wav",
         output_spec,
     )
     .unwrap();
@@ -37,7 +37,7 @@ fn main() {
         .collect();
     println!("input spec: {:?}", input_reader.spec());
 
-    let mut conv = UPConv::new(128, filter_1.len().max(filter_2.len()), &filter_1, 2);
+    let mut conv = UPConv::new(128, filter_1.len().max(filter_2.len()), &filter_1, 2, 8);
     let partition = &[(
         128,
         (filter_1.len().div_ceil(128)).max(filter_2.len().div_ceil(128)),
