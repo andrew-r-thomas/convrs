@@ -116,7 +116,7 @@ impl Default for Converb {
             },
         };
 
-        let conv = UPConv::new(128, samples_1.len().min(samples_2.len()), &samples_1, 2);
+        let conv = UPConv::new(128, samples_1.len().min(samples_2.len()), &samples_1, 2, 4);
         let filter_1_spectrums = process_filter(
             &samples_1,
             &[(

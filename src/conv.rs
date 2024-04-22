@@ -55,6 +55,7 @@ impl Conv {
             partition[0].1 * partition[0].0,
             &starting_filter[0..(partition[0].0 * partition[0].1)],
             channels,
+            4,
         );
 
         filter_index += partition[0].0 * partition[0].1;
@@ -88,6 +89,7 @@ impl Conv {
                     &starting_filter
                         [filter_index..(p.0 * p.1 + filter_index).min(starting_filter.len())],
                     channels,
+                    4,
                 );
 
                 filter_index = (filter_index + (p.0 * p.1)).min(starting_filter.len());

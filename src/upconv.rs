@@ -1,3 +1,4 @@
+use nih_plug::util::f32_midi_note_to_freq;
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
 use std::sync::Arc;
@@ -16,7 +17,8 @@ pub struct UPConv {
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
     channels: usize,
-    old_filter: (bool, Vec<Complex<f32>>),
+    old_filter: (usize, Vec<Complex<f32>>),
+    fade_len: usize,
 }
 
 impl UPConv {
@@ -27,6 +29,7 @@ impl UPConv {
         max_filter_size: usize,
         starting_filter: &[f32],
         channels: usize,
+        fade_len: usize,
     ) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
@@ -71,7 +74,8 @@ impl UPConv {
             accumulation_buffer,
             new_spectrum_buff,
             channels,
-            old_filter: (false, old_filter),
+            old_filter: (fade_len, old_filter),
+            fade_len,
         }
     }
 
@@ -80,7 +84,7 @@ impl UPConv {
         assert!(self.old_filter.1.len() == self.filter.len());
 
         self.old_filter.1.copy_from_slice(&self.filter);
-        self.old_filter.0 = true;
+        self.old_filter.0 = 0;
 
         self.filter.copy_from_slice(new_filter);
     }
@@ -138,7 +142,7 @@ impl UPConv {
             out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
 
-            if self.old_filter.0 {
+            if self.old_filter.0 <= self.fade_len {
                 self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
                 for (filter_block, fdl_block) in
@@ -158,24 +162,22 @@ impl UPConv {
                     )
                     .unwrap();
 
-                let mut i = 0;
                 for (o, f) in out
                     .iter_mut()
                     .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
                 {
-                    if i < self.block_size / 4 {
-                        *o = *f;
-                    } else if i < self.block_size * (3 / 4) {
-                        *o *= ((i - (self.block_size / 4)) / self.block_size) as f32;
-                        *o += f * (1 - ((i - (self.block_size / 4)) / self.block_size)) as f32;
-                    }
-
-                    i += 1;
+                    let f_in = (self.old_filter.0 / self.fade_len) as f32;
+                    let f_out = (1 - (self.old_filter.0 / self.fade_len)) as f32;
+                    *o *= f_in;
+                    // then we mix add it with something weighted towards the beginning
+                    *o += f * f_out;
+                    // so its a weighted average, we multiply our end by some thing
+                    // which favors the end
                 }
             }
         }
 
-        self.old_filter.0 = false;
+        self.old_filter.0 += 1;
         self.output_buffs.iter().map(|o| o.as_slice())
     }
 }
