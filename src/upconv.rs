@@ -1,4 +1,3 @@
-use nih_plug::util::f32_midi_note_to_freq;
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
 use std::sync::Arc;

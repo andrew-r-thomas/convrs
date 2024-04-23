@@ -42,12 +42,9 @@ impl Conv {
     pub fn new(
         block_size: usize,
         starting_filter: &[f32],
+        partition: &[(usize, usize)],
         channels: usize,
-    ) -> (Self, Vec<(usize, usize)>) {
-        // TODO make this not hard coded
-        // long len is 182400
-        // long2 len is 230400
-        let partition = vec![(128, 22), (1024, 21), (8192, 26)];
+    ) -> Self {
         let mut filter_index = 0;
 
         let rt_segment = UPConv::new(
@@ -190,19 +187,16 @@ impl Conv {
 
         let buff_len = input_buffs.first().unwrap().len();
 
-        (
-            Self {
-                rt_segment,
-                input_buffs,
-                output_buffs,
-                non_rt_segments,
-                cycle_count: 0,
-                block_size,
-                buff_len,
-                channels,
-            },
-            partition,
-        )
+        Self {
+            rt_segment,
+            input_buffs,
+            output_buffs,
+            non_rt_segments,
+            cycle_count: 0,
+            block_size,
+            buff_len,
+            channels,
+        }
     }
 
     pub fn update_filter<'filter>(
