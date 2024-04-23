@@ -5,7 +5,6 @@ use std::thread;
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 
-// TODO sample rate conversions for filters
 pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
@@ -25,7 +24,7 @@ struct SegmentHandle {
     avail: usize,
     rt_prods: Vec<Producer<f32>>,
     rt_conss: Vec<Consumer<f32>>,
-    filter_prod: Producer<Complex<f32>>,
+    filter_prods: Vec<Producer<Complex<f32>>>,
     message_prod: Producer<Message>,
     partition: (usize, usize),
 }
@@ -38,19 +37,19 @@ enum Message {
 impl Conv {
     pub fn new(
         block_size: usize,
-        starting_filter: &[f32],
+        starting_filter: &[&[f32]],
         partition: &[(usize, usize)],
         channels: usize,
     ) -> Self {
+        assert!(starting_filter.len() == channels);
         let mut filter_index = 0;
 
-        let rt_segment = UPConv::new(
-            partition[0].0,
-            &starting_filter[0..(partition[0].0 * partition[0].1)],
-            channels,
-            4,
-            partition[0].1,
-        );
+        let first_filter = vec![];
+        for i in 0..channels {
+            first_filter.push(&starting_filter[i][0..(partition[0].0 * partition[0].1)])
+        }
+
+        let rt_segment = UPConv::new(partition[0].0, &first_filter, channels, 4, partition[0].1);
 
         filter_index += partition[0].0 * partition[0].1;
 
