@@ -1,4 +1,4 @@
-use convrs::{conv::Conv, helpers::process_filter, partition::generate_partition, upconv::UPConv};
+use convrs::{helpers::process_filter, upconv::UPConv};
 use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 use realfft::num_complex::Complex;
 
@@ -134,7 +134,7 @@ fn main() {
 const L: usize = 512;
 const N: usize = 1024;
 
-fn filter_swap() {
+pub fn filter_swap() {
     let mut filter_1_reader =
         WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav").unwrap();
     let mut filter_2_reader =
@@ -170,7 +170,14 @@ fn filter_swap() {
         .map(|s| s.unwrap() as f32 / i16::MAX as f32)
         .collect();
 
-    let mut conv = UPConv::new(128, filter_1.len().max(filter_2.len()), &filter_1, 2, 8);
+    let mut conv = UPConv::new(
+        128,
+        &filter_1,
+        2,
+        8,
+        filter_1.len().max(filter_2.len()).div_ceil(128),
+    );
+
     let partition = &[(
         128,
         (filter_1.len().div_ceil(128)).max(filter_2.len().div_ceil(128)),

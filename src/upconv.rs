@@ -21,14 +21,12 @@ pub struct UPConv {
 }
 
 impl UPConv {
-    // TODO might be better to just take p as an input, since we're passing
-    // partitions around above this anyway
     pub fn new(
         block_size: usize,
-        max_filter_size: usize,
         starting_filter: &[f32],
         channels: usize,
         fade_len: usize,
+        num_blocks: usize,
     ) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
@@ -42,11 +40,11 @@ impl UPConv {
         let input_buffs = vec![vec![0.0; block_size * 2]; channels];
         let output_buffs = vec![vec![0.0; block_size]; channels];
 
-        let p = max_filter_size.div_ceil(block_size);
-        let mut filter = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * p];
-        let old_filter = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * p];
+        let mut filter = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks];
+        let old_filter = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks];
 
-        let fdls = vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p]; channels];
+        let fdls =
+            vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; num_blocks]; channels];
 
         let filter_iter = starting_filter.chunks(block_size);
         for (chunk, filter_buff) in filter_iter.zip(&mut filter.chunks_mut(block_size + 1)) {

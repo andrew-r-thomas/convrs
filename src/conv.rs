@@ -2,11 +2,8 @@ use nih_plug::nih_log;
 use realfft::num_complex::Complex;
 use std::thread;
 
-// TODO ok so we gotta do the ffts for the filters
-// before passing them, or at least not in real time
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
-// use crate::{partition_table::PARTITIONS_1_128, upconv::UPConv};
 
 // TODO sample rate conversions for filters
 pub struct Conv {
@@ -49,10 +46,10 @@ impl Conv {
 
         let rt_segment = UPConv::new(
             partition[0].0,
-            partition[0].1 * partition[0].0,
             &starting_filter[0..(partition[0].0 * partition[0].1)],
             channels,
             4,
+            partition[0].1,
         );
 
         filter_index += partition[0].0 * partition[0].1;
@@ -82,11 +79,11 @@ impl Conv {
 
                 let mut upconv = UPConv::new(
                     p.0,
-                    p.0 * p.1,
                     &starting_filter
                         [filter_index..(p.0 * p.1 + filter_index).min(starting_filter.len())],
                     channels,
                     4,
+                    p.1,
                 );
 
                 filter_index = (filter_index + (p.0 * p.1)).min(starting_filter.len());
