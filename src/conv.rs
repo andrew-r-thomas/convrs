@@ -250,11 +250,11 @@ impl Conv {
                         todo!()
                     }
                 }
+            }
 
-                match seg.message_prod.push(Message::NewFilter) {
-                    Ok(_) => {}
-                    Err(_) => panic!(),
-                }
+            match seg.message_prod.push(Message::NewFilter) {
+                Ok(_) => {}
+                Err(_) => panic!(),
             }
         }
     }
