@@ -37,19 +37,20 @@ enum Message {
 impl Conv {
     pub fn new(
         block_size: usize,
-        starting_filter: &[&[f32]],
+        starting_filter: Vec<Vec<Vec<Complex<f32>>>>,
         partition: &[(usize, usize)],
         channels: usize,
     ) -> Self {
         assert!(starting_filter.len() == channels);
         let mut filter_index = 0;
 
-        let first_filter = vec![];
-        for i in 0..channels {
-            first_filter.push(&starting_filter[i][0..(partition[0].0 * partition[0].1)])
-        }
-
-        let rt_segment = UPConv::new(partition[0].0, &first_filter, channels, 4, partition[0].1);
+        let rt_segment = UPConv::new(
+            partition[0].0,
+            starting_filter[0].clone(),
+            channels,
+            4,
+            partition[0].1,
+        );
 
         filter_index += partition[0].0 * partition[0].1;
 
@@ -63,27 +64,26 @@ impl Conv {
                 let mut rt_conss = vec![];
                 let mut seg_conss = vec![];
                 let mut seg_prods = vec![];
-                let (filter_prod, mut filter_cons) =
-                    RingBuffer::<Complex<f32>>::new((p.0 + 1) * p.1 * 2);
+                let mut filter_prods = vec![];
+                let mut filter_conss = vec![];
+
                 let (message_prod, mut message_cons) = RingBuffer::<Message>::new(10);
                 for _ in 0..channels {
                     let (rt_prod, seg_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
                     let (seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * 1000 * channels);
 
+                    let (filter_prod, filter_cons) =
+                        RingBuffer::<Complex<f32>>::new((p.0 + 1) * p.1 * 2);
+
                     rt_prods.push(rt_prod);
                     rt_conss.push(rt_cons);
                     seg_conss.push(seg_cons);
                     seg_prods.push(seg_prod);
+                    filter_prods.push(filter_prod);
+                    filter_conss.push(filter_cons);
                 }
 
-                let mut upconv = UPConv::new(
-                    p.0,
-                    &starting_filter
-                        [filter_index..(p.0 * p.1 + filter_index).min(starting_filter.len())],
-                    channels,
-                    4,
-                    p.1,
-                );
+                let mut upconv = UPConv::new(p.0, starting_filter[i].clone(), channels, 4, p.1);
 
                 filter_index = (filter_index + (p.0 * p.1)).min(starting_filter.len());
 
@@ -95,14 +95,22 @@ impl Conv {
                     loop {
                         match message_cons.pop() {
                             Ok(m) => match m {
-                                Message::NewFilter => match filter_cons.read_chunk(p.0 * p.1) {
-                                    Ok(r) => {
-                                        let (s1, s2) = r.as_slices();
-                                        upconv.update_filter(&[s1, s2].concat());
-                                        r.commit_all();
+                                Message::NewFilter => {
+                                    let mut channel_filters = vec![];
+                                    for filter_cons in &mut filter_conss {
+                                        match filter_cons.read_chunk(p.0 * p.1) {
+                                            Ok(r) => {
+                                                let (s1, s2) = r.as_slices();
+                                                channel_filters.push([s1, s2].concat());
+                                                r.commit_all();
+                                            }
+                                            Err(_) => panic!(),
+                                        }
                                     }
-                                    Err(_) => panic!(),
-                                },
+                                    upconv.update_filter(
+                                        channel_filters.iter().map(|c| c.as_slice()),
+                                    );
+                                }
                                 Message::ProcessBlock => {
                                     for (seg_cons, channel_buff) in
                                         seg_conss.iter_mut().zip(&mut channels_buff)
@@ -159,7 +167,7 @@ impl Conv {
                     block_size: p.0,
                     rt_prods,
                     rt_conss,
-                    filter_prod,
+                    filter_prods,
                     partition: p,
                     message_prod,
                 });
@@ -197,49 +205,50 @@ impl Conv {
 
     pub fn update_filter<'filter>(
         &mut self,
-        new_filter: impl IntoIterator<Item = &'filter [Complex<f32>]>,
+        // chunks are on the outside, then channels inside that, then block inside that
+        new_filter: &Vec<Vec<Vec<Complex<f32>>>>,
     ) {
         let mut filter_iter = new_filter.into_iter();
-        self.rt_segment.update_filter(filter_iter.next().unwrap());
+        self.rt_segment
+            .update_filter(filter_iter.next().unwrap().iter().map(|f| f.as_slice()));
 
         // we're relying on the ordering being correct here
         for (seg, filter_chunk) in self.non_rt_segments.iter_mut().zip(filter_iter) {
-            match seg
-                .filter_prod
-                .write_chunk((seg.partition.0 + 1) * seg.partition.1)
-            {
-                Ok(mut w) => {
-                    let (s1, s2) = w.as_mut_slices();
-                    s1.fill(Complex { re: 0.0, im: 0.0 });
-                    s2.fill(Complex { re: 0.0, im: 0.0 });
+            for (prod, channel_chunk) in seg.filter_prods.iter_mut().zip(filter_chunk.into_iter()) {
+                match prod.write_chunk((seg.partition.0 + 1) * seg.partition.1) {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+                        s1.fill(Complex { re: 0.0, im: 0.0 });
+                        s2.fill(Complex { re: 0.0, im: 0.0 });
 
-                    let s1_len = s1.len();
-                    let s2_len = s2.len();
+                        let s1_len = s1.len();
+                        let s2_len = s2.len();
 
-                    for (s, f) in s1
-                        .iter_mut()
-                        .zip(&filter_chunk[0..s1_len.min(filter_chunk.len())])
-                    {
-                        *s = *f;
+                        for (s, f) in s1
+                            .iter_mut()
+                            .zip(&channel_chunk[0..s1_len.min(filter_chunk.len())])
+                        {
+                            *s = *f;
+                        }
+
+                        for (s, f) in s2.iter_mut().zip(
+                            &channel_chunk[s1_len.min(filter_chunk.len())
+                                ..(s1_len + s2_len).min(filter_chunk.len())],
+                        ) {
+                            *s = *f;
+                        }
+
+                        w.commit_all();
                     }
-
-                    for (s, f) in s2.iter_mut().zip(
-                        &filter_chunk[s1_len.min(filter_chunk.len())
-                            ..(s1_len + s2_len).min(filter_chunk.len())],
-                    ) {
-                        *s = *f;
+                    Err(_) => {
+                        todo!()
                     }
-
-                    w.commit_all();
                 }
-                Err(_) => {
-                    todo!()
-                }
-            }
 
-            match seg.message_prod.push(Message::NewFilter) {
-                Ok(_) => {}
-                Err(_) => panic!(),
+                match seg.message_prod.push(Message::NewFilter) {
+                    Ok(_) => {}
+                    Err(_) => panic!(),
+                }
             }
         }
     }

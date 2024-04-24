@@ -27,7 +27,7 @@ pub struct UPConv {
 impl UPConv {
     pub fn new(
         block_size: usize,
-        starting_filter: &[&[f32]],
+        starting_filter: Vec<Vec<Complex<f32>>>,
         channels: usize,
         fade_len: usize,
         num_blocks: usize,
@@ -38,37 +38,19 @@ impl UPConv {
         let fft = planner.plan_fft_forward(block_size * 2);
         let ifft = planner.plan_fft_inverse(block_size * 2);
 
-        let mut input_fft_buff = fft.make_input_vec();
+        let input_fft_buff = fft.make_input_vec();
         let output_fft_buff = ifft.make_output_vec();
         let accumulation_buffer = ifft.make_input_vec();
-        let mut new_spectrum_buff = fft.make_output_vec();
+        let new_spectrum_buff = fft.make_output_vec();
 
         let input_buffs = vec![vec![0.0; block_size * 2]; channels];
         let output_buffs = vec![vec![0.0; block_size]; channels];
 
-        let mut filter =
-            vec![vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks]; channels];
         let old_filter =
             vec![vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks]; channels];
 
         let fdls =
             vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; num_blocks]; channels];
-
-        for (filter_channel, buff_channel) in starting_filter.iter().zip(&mut filter) {
-            let filter_iter = filter_channel.chunks(block_size);
-            for (chunk, filter_buff) in
-                filter_iter.zip(&mut buff_channel.chunks_mut(block_size + 1))
-            {
-                input_fft_buff.fill(0.0);
-                input_fft_buff[0..chunk.len()].copy_from_slice(chunk);
-
-                fft.process_with_scratch(&mut input_fft_buff, &mut new_spectrum_buff, &mut [])
-                    .unwrap();
-
-                filter_buff.copy_from_slice(&new_spectrum_buff);
-                new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
-            }
-        }
 
         Self {
             fft,
@@ -78,7 +60,7 @@ impl UPConv {
             input_fft_buff,
             output_buffs,
             output_fft_buff,
-            filter,
+            filter: starting_filter,
             fdls,
             accumulation_buffer,
             new_spectrum_buff,
@@ -88,13 +70,14 @@ impl UPConv {
         }
     }
 
-    pub fn update_filter(&mut self, new_filter: &[&[Complex<f32>]]) {
-        assert!(new_filter.len() == self.filter.len());
-        assert!(self.old_filter.1.len() == self.filter.len());
+    pub fn update_filter<'filter>(
+        &mut self,
+        new_filter: impl IntoIterator<Item = &'filter [Complex<f32>]>,
+    ) {
         // TODO maybe nice to have some more asserts here or we make a new type
 
         for ((new, current), old) in new_filter
-            .iter()
+            .into_iter()
             .zip(&mut self.filter)
             .zip(&mut self.old_filter.1)
         {

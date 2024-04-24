@@ -1,6 +1,6 @@
 pub mod editor;
 
-use convrs::{helpers::process_filter, upconv::UPConv};
+use convrs::{conv::Conv, helpers::process_filter};
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
@@ -13,9 +13,9 @@ use std::sync::Arc;
 
 struct Converb {
     params: Arc<ConverbParams>,
-    conv: UPConv,
-    filter_1: Vec<Complex<f32>>,
-    filter_2: Vec<Complex<f32>>,
+    conv: Conv,
+    filter_1: Vec<Vec<Vec<Complex<f32>>>>,
+    filter_2: Vec<Vec<Vec<Complex<f32>>>>,
     is_filter_1: bool,
 }
 
@@ -116,16 +116,10 @@ impl Default for Converb {
             },
         };
 
-        let conv = UPConv::new(
-            128,
-            &samples_1,
-            2,
-            4,
-            samples_1.len().max(samples_2.len()).div_ceil(128),
-        );
-
         let filter_1_spectrums = process_filter(
             &samples_1,
+            true,
+            2,
             &[(
                 128,
                 (samples_1.len().div_ceil(128)).max(samples_2.len().div_ceil(128)),
@@ -133,17 +127,27 @@ impl Default for Converb {
         );
         let filter_2_spectrums = process_filter(
             &samples_2,
+            true,
+            2,
             &[(
                 128,
                 (samples_1.len().div_ceil(128)).max(samples_2.len().div_ceil(128)),
             )],
         );
 
+        let conv = Conv::new(
+            128,
+            filter_1_spectrums.clone(),
+            // TODO
+            &[(1, 1)],
+            2,
+        );
+
         Self {
             params: Arc::new(ConverbParams::default()),
             conv,
-            filter_1: filter_1_spectrums.into_iter().flatten().collect(),
-            filter_2: filter_2_spectrums.into_iter().flatten().collect(),
+            filter_1: filter_1_spectrums,
+            filter_2: filter_2_spectrums,
             is_filter_1: true,
         }
     }
