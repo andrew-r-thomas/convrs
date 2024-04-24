@@ -41,7 +41,13 @@ impl Conv {
         partition: &[(usize, usize)],
         channels: usize,
     ) -> Self {
-        assert!(starting_filter.len() == channels);
+        // assert!(starting_filter.first().unwrap().len() == channels);
+        nih_log!(
+            "what should be number of channels: {}",
+            starting_filter.first().unwrap().len()
+        );
+        nih_log!("number of channels: {}", channels);
+
         let mut filter_index = 0;
 
         let rt_segment = UPConv::new(

@@ -2,24 +2,28 @@ use hound::{SampleFormat, WavReader, WavSpec, WavWriter};
 
 fn main() {
     let mut reader_1 =
-        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/c2sine.wav").unwrap();
+        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long_stereo.wav")
+            .unwrap();
     let mut reader_2 =
-        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/in/c3sine.wav").unwrap();
+        WavReader::open("/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav").unwrap();
     println!("reader 1 spec: {:?}", reader_1.spec());
     println!("reader 2 spec: {:?}", reader_2.spec());
 
     let samples_1: Vec<f32> = reader_1
-        .samples::<i16>()
-        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
+        .samples::<i32>()
+        .map(|s| s.unwrap() as f32 / i32::MAX as f32)
         .collect();
     let samples_2: Vec<f32> = reader_2
-        .samples::<i16>()
-        .map(|s| s.unwrap() as f32 / i16::MAX as f32)
+        .samples::<i32>()
+        .map(|s| s.unwrap() as f32 / i32::MAX as f32)
         .collect();
+
+    println!("long len: {}", samples_1.len());
+    println!("long 2 len: {}", samples_2.len());
 
     let spec = WavSpec {
         channels: 2,
-        sample_rate: 44100,
+        sample_rate: 48000,
         bits_per_sample: 32,
         sample_format: SampleFormat::Float,
     };

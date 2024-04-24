@@ -1,3 +1,4 @@
+use nih_plug::debug::nih_log;
 use realfft::{num_complex::Complex, RealFftPlanner};
 
 /// this function is not real time safe
@@ -30,13 +31,14 @@ pub fn process_filter(
         }
         cf
     };
+    nih_log!("channel_filters len: {}", channel_filters.len());
 
-    for channel_filter in channel_filters {
-        let mut filter_index = 0;
+    let mut filter_index = 0;
+    for (part, fft) in partition.iter().zip(&mut ffts) {
         let mut part_vec = vec![];
-
-        for (part, fft) in partition.iter().zip(&mut ffts) {
-            let filter_chunk = &channel_filter[filter_index
+        for channel_filter in &channel_filters {
+            let mut channel_vec = vec![];
+            let filter_chunk = &channel_filter[filter_index.min(channel_filter.len())
                 ..(filter_index.min(channel_filter.len()) + (part.0 * part.1))
                     .min(channel_filter.len())];
 
@@ -49,11 +51,13 @@ pub fn process_filter(
 
                 fft.process(&mut fft_in, &mut fft_out).unwrap();
 
-                part_vec.push(fft_out);
+                channel_vec.extend(fft_out);
             }
-
-            filter_index += part.0 * part.1;
+            part_vec.push(channel_vec);
         }
+
+        filter_index += part.0 * part.1;
+        nih_log!("part vec len: {}", part_vec.len());
         out.push(part_vec);
     }
     out

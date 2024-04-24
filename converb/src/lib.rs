@@ -7,10 +7,6 @@ use nih_plug_vizia::ViziaState;
 use num::Complex;
 use std::sync::Arc;
 
-// This is a shortened version of the gain example with most comments removed, check out
-// https://github.com/robbert-vdh/nih-plug/blob/master/plugins/examples/gain/src/lib.rs to get
-// started
-
 struct Converb {
     params: Arc<ConverbParams>,
     conv: Conv,
@@ -31,7 +27,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader_1 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -74,7 +70,7 @@ impl Default for Converb {
         };
 
         let mut reader_2 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -116,32 +112,12 @@ impl Default for Converb {
             },
         };
 
-        let filter_1_spectrums = process_filter(
-            &samples_1,
-            true,
-            2,
-            &[(
-                128,
-                (samples_1.len().div_ceil(128)).max(samples_2.len().div_ceil(128)),
-            )],
-        );
-        let filter_2_spectrums = process_filter(
-            &samples_2,
-            true,
-            2,
-            &[(
-                128,
-                (samples_1.len().div_ceil(128)).max(samples_2.len().div_ceil(128)),
-            )],
-        );
+        let partition = &[(128, 22), (1024, 21), (8192, 26)];
 
-        let conv = Conv::new(
-            128,
-            filter_1_spectrums.clone(),
-            // TODO
-            &[(1, 1)],
-            2,
-        );
+        let filter_1_spectrums = process_filter(&samples_1, true, 2, partition);
+        let filter_2_spectrums = process_filter(&samples_2, true, 2, partition);
+
+        let conv = Conv::new(128, filter_1_spectrums.clone(), partition, 2);
 
         Self {
             params: Arc::new(ConverbParams::default()),
