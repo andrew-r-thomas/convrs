@@ -104,7 +104,7 @@ impl Conv {
                                 Message::NewFilter => {
                                     let mut channel_filters = vec![];
                                     for filter_cons in &mut filter_conss {
-                                        match filter_cons.read_chunk(p.0 * p.1) {
+                                        match filter_cons.read_chunk((p.0 + 1) * p.1) {
                                             Ok(r) => {
                                                 let (s1, s2) = r.as_slices();
                                                 channel_filters.push([s1, s2].concat());

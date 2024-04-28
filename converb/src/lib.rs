@@ -70,7 +70,7 @@ impl Default for Converb {
         };
 
         let mut reader_2 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long2.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long_stereo2.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -122,8 +122,8 @@ impl Default for Converb {
         Self {
             params: Arc::new(ConverbParams::default()),
             conv,
-            filter_1: filter_1_spectrums,
-            filter_2: filter_2_spectrums,
+            filter_1: filter_2_spectrums, // filter_1_spectrums,
+            filter_2: filter_1_spectrums, // filter_2_spectrums,
             is_filter_1: true,
         }
     }
