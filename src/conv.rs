@@ -5,6 +5,14 @@ use std::thread;
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 
+/*
+TODO
+ok so the swapping kinda works but with two catches
+
+1. still havent figured out the crossfading
+2. it'll crash if we swap filters really quickly
+*/
+
 pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
@@ -41,7 +49,7 @@ impl Conv {
         partition: &[(usize, usize)],
         channels: usize,
     ) -> Self {
-        // assert!(starting_filter.first().unwrap().len() == channels);
+        assert!(starting_filter.first().unwrap().len() == channels);
         let mut filter_index = 0;
 
         let rt_segment = UPConv::new(

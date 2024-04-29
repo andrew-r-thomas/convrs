@@ -112,7 +112,7 @@ impl Default for Converb {
             },
         };
 
-        let partition = &[(128, 22), (1024, 21), (8192, 10), (32768, 8)];
+        let partition = &[(128, 22), (1024, 21), (8192, 23)];
 
         let filter_1_spectrums = process_filter(&samples_1, true, 2, partition);
         let filter_2_spectrums = process_filter(&samples_2, true, 2, partition);

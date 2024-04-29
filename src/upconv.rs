@@ -82,7 +82,6 @@ impl UPConv {
     ) {
         assert!(new_filter.len() == self.channels);
 
-        let mut log = true;
         for ((new, current), old) in new_filter
             .into_iter()
             .zip(&mut self.filter)
@@ -90,13 +89,6 @@ impl UPConv {
         {
             assert!(new.len() == old.len());
             assert!(current.len() == new.len());
-
-            if log {
-                nih_log!("old block: {:?}", old);
-                nih_log!("current block: {:?}", current);
-                nih_log!("new block: {:?}", new);
-                log = false;
-            }
 
             old.copy_from_slice(current);
             current.copy_from_slice(new);
