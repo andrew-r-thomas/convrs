@@ -42,19 +42,12 @@ impl Conv {
         channels: usize,
     ) -> Self {
         // assert!(starting_filter.first().unwrap().len() == channels);
-        nih_log!(
-            "what should be number of channels: {}",
-            starting_filter.first().unwrap().len()
-        );
-        nih_log!("number of channels: {}", channels);
-
         let mut filter_index = 0;
 
         let rt_segment = UPConv::new(
             partition[0].0,
             starting_filter[0].clone(),
             channels,
-            4,
             partition[0].1,
         );
 
@@ -89,7 +82,7 @@ impl Conv {
                     filter_conss.push(filter_cons);
                 }
 
-                let mut upconv = UPConv::new(p.0, starting_filter[i].clone(), channels, 4, p.1);
+                let mut upconv = UPConv::new(p.0, starting_filter[i].clone(), channels, p.1);
 
                 filter_index = (filter_index + (p.0 * p.1)).min(starting_filter.len());
 
@@ -224,25 +217,11 @@ impl Conv {
                 match prod.write_chunk((seg.partition.0 + 1) * seg.partition.1) {
                     Ok(mut w) => {
                         let (s1, s2) = w.as_mut_slices();
-                        s1.fill(Complex { re: 0.0, im: 0.0 });
-                        s2.fill(Complex { re: 0.0, im: 0.0 });
 
                         let s1_len = s1.len();
                         let s2_len = s2.len();
-
-                        for (s, f) in s1
-                            .iter_mut()
-                            .zip(&channel_chunk[0..s1_len.min(filter_chunk.len())])
-                        {
-                            *s = *f;
-                        }
-
-                        for (s, f) in s2.iter_mut().zip(
-                            &channel_chunk[s1_len.min(filter_chunk.len())
-                                ..(s1_len + s2_len).min(filter_chunk.len())],
-                        ) {
-                            *s = *f;
-                        }
+                        s1.copy_from_slice(&channel_chunk[0..s1_len]);
+                        s2.copy_from_slice(&channel_chunk[s1_len..s1_len + s2_len]);
 
                         w.commit_all();
                     }
@@ -254,7 +233,7 @@ impl Conv {
 
             match seg.message_prod.push(Message::NewFilter) {
                 Ok(_) => {}
-                Err(_) => panic!(),
+                Err(_) => todo!(),
             }
         }
     }

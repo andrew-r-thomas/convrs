@@ -1,6 +1,19 @@
+use nih_plug::debug::nih_log;
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
 use std::sync::Arc;
+
+/*
+NOTE
+trying to figure out why the filter swapping is
+causing the filter to just stop being applied
+
+its not the crossfading, we run into the same issue
+even if we get rid of that code, so it's either
+something to do with the update filter function here
+
+or somewhere in conv.rs
+*/
 
 pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
@@ -10,18 +23,13 @@ pub struct UPConv {
     output_buffs: Vec<Vec<f32>>,
     output_fft_buff: Vec<f32>,
     block_size: usize,
-    // NOTE we just do stereo filter for now,
-    // might add arbitrary filter lengths in the future
-    // the Conv class manages mono filters by simply copying them
-    // into a stereo filter
     filter: Vec<Vec<Complex<f32>>>,
     // TODO lol this type just makes me not feel very good about life
     fdls: Vec<Vec<Vec<Complex<f32>>>>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
     channels: usize,
-    old_filter: (usize, Vec<Vec<Complex<f32>>>),
-    fade_len: usize,
+    old_filter: (bool, Vec<Vec<Complex<f32>>>),
 }
 
 impl UPConv {
@@ -29,7 +37,6 @@ impl UPConv {
         block_size: usize,
         starting_filter: Vec<Vec<Complex<f32>>>,
         channels: usize,
-        fade_len: usize,
         num_blocks: usize,
     ) -> Self {
         assert!(starting_filter.len() == channels);
@@ -65,35 +72,45 @@ impl UPConv {
             accumulation_buffer,
             new_spectrum_buff,
             channels,
-            old_filter: (fade_len, old_filter),
-            fade_len,
+            old_filter: (true, old_filter),
         }
     }
 
     pub fn update_filter<'filter>(
         &mut self,
-        new_filter: impl IntoIterator<Item = &'filter [Complex<f32>]>,
+        new_filter: impl IntoIterator<Item = &'filter [Complex<f32>]> + ExactSizeIterator,
     ) {
-        // TODO maybe nice to have some more asserts here or we make a new type
+        assert!(new_filter.len() == self.channels);
 
+        let mut log = true;
         for ((new, current), old) in new_filter
             .into_iter()
             .zip(&mut self.filter)
             .zip(&mut self.old_filter.1)
         {
+            assert!(new.len() == old.len());
+            assert!(current.len() == new.len());
+
+            if log {
+                nih_log!("old block: {:?}", old);
+                nih_log!("current block: {:?}", current);
+                nih_log!("new block: {:?}", new);
+                log = false;
+            }
+
             old.copy_from_slice(current);
             current.copy_from_slice(new);
         }
 
-        self.old_filter.0 = 0;
+        self.old_filter.0 = true;
     }
 
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
     /// so there will be one block size slice of samples per channel in block
     pub fn process_block<'blocks>(
         &mut self,
-        channel_blocks: impl IntoIterator<Item = &'blocks [f32]>,
-    ) -> impl IntoIterator<Item = &[f32]> {
+        channel_blocks: impl IntoIterator<Item = &'blocks [f32]> + ExactSizeIterator,
+    ) -> impl IntoIterator<Item = &[f32]> + ExactSizeIterator {
         let mut blocks = channel_blocks.into_iter();
         // move the inputs over by one block and add the new block on the end
         for i in 0..self.channels {
@@ -142,43 +159,46 @@ impl UPConv {
             out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
 
-            if self.old_filter.0 <= self.fade_len {
-                let old = &self.old_filter.1[i];
-                self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+            //     if self.old_filter.0 {
+            //         nih_log!(
+            //             "doing filter swap in process block on segment with block len: {}",
+            //             self.block_size
+            //         );
 
-                for (filter_block, fdl_block) in
-                    // NOTE the &* makes me nervous
-                    old.chunks(self.block_size + 1).zip(&*fdl)
-                {
-                    for i in 0..self.block_size + 1 {
-                        self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
-                    }
-                }
+            //         let old = &self.old_filter.1[i];
+            //         self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
-                self.ifft
-                    .process_with_scratch(
-                        &mut self.accumulation_buffer,
-                        &mut self.output_fft_buff,
-                        &mut [],
-                    )
-                    .unwrap();
+            //         for (filter_block, fdl_block) in
+            //             old.chunks(self.block_size + 1).zip(&*fdl)
+            //         {
+            //             for i in 0..self.block_size + 1 {
+            //                 self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
+            //             }
+            //         }
 
-                for (o, f) in out
-                    .iter_mut()
-                    .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
-                {
-                    let f_in = (self.old_filter.0 / self.fade_len) as f32;
-                    let f_out = (1 - (self.old_filter.0 / self.fade_len)) as f32;
-                    *o *= f_in;
-                    // then we mix add it with something weighted towards the beginning
-                    *o += f * f_out;
-                    // so its a weighted average, we multiply our end by some thing
-                    // which favors the end
-                }
-            }
+            //         self.ifft
+            //             .process_with_scratch(
+            //                 &mut self.accumulation_buffer,
+            //                 &mut self.output_fft_buff,
+            //                 &mut [],
+            //             )
+            //             .unwrap();
+
+            //         let mut j = 0;
+            //         for (o, f) in out
+            //             .iter_mut()
+            //             .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
+            //         {
+            //             let f_in = (j / self.block_size) as f32;
+            //             let f_out = 1.0 - f_in;
+            //             *o *= f_in;
+            //             *o += f * f_out;
+            //             j += 1;
+            //         }
+            //         self.old_filter.0 = false;
+            //     }
         }
 
-        self.old_filter.0 += 1;
         self.output_buffs.iter().map(|o| o.as_slice())
     }
 }

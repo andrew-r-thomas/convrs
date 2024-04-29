@@ -122,8 +122,8 @@ impl Default for Converb {
         Self {
             params: Arc::new(ConverbParams::default()),
             conv,
-            filter_1: filter_2_spectrums, // filter_1_spectrums,
-            filter_2: filter_1_spectrums, // filter_2_spectrums,
+            filter_1: filter_1_spectrums,
+            filter_2: filter_2_spectrums,
             is_filter_1: true,
         }
     }
