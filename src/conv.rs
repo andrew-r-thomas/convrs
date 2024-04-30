@@ -5,14 +5,6 @@ use std::thread;
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 
-/*
-TODO
-ok so the swapping kinda works but with two catches
-
-1. still havent figured out the crossfading
-2. it'll crash if we swap filters really quickly
-*/
-
 pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
@@ -24,8 +16,6 @@ pub struct Conv {
     channels: usize,
 }
 
-// TODO think about where we want to store partition info
-// right now its in a couple of places
 struct SegmentHandle {
     block_size: usize,
     offset: usize,

@@ -1,4 +1,3 @@
-use nih_plug::debug::nih_log;
 use realfft::{num_complex::Complex, RealFftPlanner};
 
 /// this function is not real time safe
@@ -11,7 +10,6 @@ pub fn process_filter(
     channels: usize,
     partition: &[(usize, usize)],
 ) -> Vec<Vec<Vec<Complex<f32>>>> {
-    // TODO consider taking ffts as arguments
     let mut planner = RealFftPlanner::<f32>::new();
     let mut ffts = partition.iter().map(|p| planner.plan_fft_forward(p.0 * 2));
 
@@ -31,7 +29,6 @@ pub fn process_filter(
         }
         cf
     };
-    nih_log!("channel_filters len: {}", channel_filters.len());
 
     let mut filter_index = 0;
     for (part, fft) in partition.iter().zip(&mut ffts) {
@@ -57,7 +54,6 @@ pub fn process_filter(
         }
 
         filter_index += part.0 * part.1;
-        nih_log!("part vec len: {}", part_vec.len());
         out.push(part_vec);
     }
     out

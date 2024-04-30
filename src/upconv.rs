@@ -1,19 +1,8 @@
 use nih_plug::debug::nih_log;
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
+use std::f32::consts::PI;
 use std::sync::Arc;
-
-/*
-NOTE
-trying to figure out why the filter swapping is
-causing the filter to just stop being applied
-
-its not the crossfading, we run into the same issue
-even if we get rid of that code, so it's either
-something to do with the update filter function here
-
-or somewhere in conv.rs
-*/
 
 pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
@@ -151,44 +140,37 @@ impl UPConv {
             out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
 
-            //     if self.old_filter.0 {
-            //         nih_log!(
-            //             "doing filter swap in process block on segment with block len: {}",
-            //             self.block_size
-            //         );
+            if self.old_filter.0 {
+                let old = &self.old_filter.1[i];
+                self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
-            //         let old = &self.old_filter.1[i];
-            //         self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+                for (filter_block, fdl_block) in old.chunks(self.block_size + 1).zip(&*fdl) {
+                    for i in 0..self.block_size + 1 {
+                        self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
+                    }
+                }
 
-            //         for (filter_block, fdl_block) in
-            //             old.chunks(self.block_size + 1).zip(&*fdl)
-            //         {
-            //             for i in 0..self.block_size + 1 {
-            //                 self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
-            //             }
-            //         }
+                self.ifft
+                    .process_with_scratch(
+                        &mut self.accumulation_buffer,
+                        &mut self.output_fft_buff,
+                        &mut [],
+                    )
+                    .unwrap();
 
-            //         self.ifft
-            //             .process_with_scratch(
-            //                 &mut self.accumulation_buffer,
-            //                 &mut self.output_fft_buff,
-            //                 &mut [],
-            //             )
-            //             .unwrap();
-
-            //         let mut j = 0;
-            //         for (o, f) in out
-            //             .iter_mut()
-            //             .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
-            //         {
-            //             let f_in = (j / self.block_size) as f32;
-            //             let f_out = 1.0 - f_in;
-            //             *o *= f_in;
-            //             *o += f * f_out;
-            //             j += 1;
-            //         }
-            //         self.old_filter.0 = false;
-            //     }
+                let mut j = 0;
+                for (o, f) in out
+                    .iter_mut()
+                    .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
+                {
+                    let f_in = f32::cos(j as f32 * PI / self.block_size as f32) * 0.5 + 0.5;
+                    let f_out = 1.0 - f_in;
+                    *o *= f_in;
+                    *o += f * f_out;
+                    j += 1;
+                }
+                self.old_filter.0 = false;
+            }
         }
 
         self.output_buffs.iter().map(|o| o.as_slice())
