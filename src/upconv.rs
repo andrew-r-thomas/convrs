@@ -1,5 +1,7 @@
+use nih_plug::debug::nih_log;
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
+use std::f32::consts::PI;
 use std::sync::Arc;
 
 pub struct UPConv {
@@ -16,11 +18,18 @@ pub struct UPConv {
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
     channels: usize,
-    p: usize,
+    old_filter: (bool, Vec<Vec<Complex<f32>>>),
 }
 
-impl<'blocks> UPConv {
-    pub fn new(block_size: usize, max_filter_size: usize, channels: usize) -> Self {
+impl UPConv {
+    pub fn new(
+        block_size: usize,
+        starting_filter: Vec<Vec<Complex<f32>>>,
+        channels: usize,
+        num_blocks: usize,
+    ) -> Self {
+        assert!(starting_filter.len() == channels);
+
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
         let ifft = planner.plan_fft_inverse(block_size * 2);
@@ -30,17 +39,14 @@ impl<'blocks> UPConv {
         let accumulation_buffer = ifft.make_input_vec();
         let new_spectrum_buff = fft.make_output_vec();
 
-        let mut input_buffs = vec![];
-        for _ in 0..channels {
-            input_buffs.push(fft.make_input_vec());
-        }
-
+        let input_buffs = vec![vec![0.0; block_size * 2]; channels];
         let output_buffs = vec![vec![0.0; block_size]; channels];
 
-        let p = max_filter_size.div_ceil(block_size);
-        let filter = Vec::with_capacity(p);
+        let old_filter =
+            vec![vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks]; channels];
 
-        let fdls = vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; p]; channels];
+        let fdls =
+            vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; num_blocks]; channels];
 
         Self {
             fft,
@@ -50,60 +56,49 @@ impl<'blocks> UPConv {
             input_fft_buff,
             output_buffs,
             output_fft_buff,
-            filter,
+            filter: starting_filter,
             fdls,
             accumulation_buffer,
             new_spectrum_buff,
             channels,
-            p,
+            old_filter: (true, old_filter),
         }
     }
 
-    // TODO
-    // need to figure out how to make sure this is either real time safe
-    // or not real time safe and clearly stated, or sectioned off
-    pub fn set_filter(&mut self, new_filter: &[f32]) {
-        let filter_iter = new_filter.chunks_exact(self.block_size);
-        // TODO see if we can do this in a real time safe way
-        let mut real_vec = self.fft.make_input_vec();
-        let mut comp_vec = self.fft.make_output_vec();
+    pub fn update_filter<'filter>(
+        &mut self,
+        new_filter: impl IntoIterator<Item = &'filter [Complex<f32>]> + ExactSizeIterator,
+    ) {
+        assert!(new_filter.len() == self.channels);
 
-        self.filter.clear();
+        for ((new, current), old) in new_filter
+            .into_iter()
+            .zip(&mut self.filter)
+            .zip(&mut self.old_filter.1)
+        {
+            assert!(new.len() == old.len());
+            assert!(current.len() == new.len());
 
-        for chunk in filter_iter {
-            real_vec.fill(0.0);
-            real_vec[0..chunk.len()].copy_from_slice(chunk);
-
-            self.fft
-                .process_with_scratch(&mut real_vec, &mut comp_vec, &mut [])
-                .unwrap();
-
-            let mut out = Vec::with_capacity(self.block_size + 1);
-            out.clone_from(&comp_vec);
-
-            self.filter.push(out);
+            old.copy_from_slice(current);
+            current.copy_from_slice(new);
         }
-        let filter_len = self.filter.len();
 
-        self.filter.extend(vec![
-            vec![Complex { re: 0.0, im: 0.0 }; self.block_size + 1];
-            self.p - filter_len
-        ]);
+        self.old_filter.0 = true;
     }
 
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
     /// so there will be one block size slice of samples per channel in block
-    pub fn process_block(
+    pub fn process_block<'blocks>(
         &mut self,
-        channel_blocks: impl IntoIterator<Item = &'blocks [f32]>,
-    ) -> impl IntoIterator<Item = &[f32]> {
+        channel_blocks: impl IntoIterator<Item = &'blocks [f32]> + ExactSizeIterator,
+    ) -> impl IntoIterator<Item = &[f32]> + ExactSizeIterator {
         let mut blocks = channel_blocks.into_iter();
         // move the inputs over by one block and add the new block on the end
         for i in 0..self.channels {
             let buff = &mut self.input_buffs[i];
             let block = blocks.next().unwrap();
             let fdl = &mut self.fdls[i];
-            assert!(self.filter.len() == fdl.len());
+            let filter = &self.filter[i];
             let out = &mut self.output_buffs[i];
 
             buff.copy_within(self.block_size..self.block_size * 2, 0);
@@ -128,7 +123,7 @@ impl<'blocks> UPConv {
             self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
             self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
-            for (filter_block, fdl_block) in self.filter.iter().zip(fdl) {
+            for (filter_block, fdl_block) in filter.chunks(self.block_size + 1).zip(&*fdl) {
                 for i in 0..self.block_size + 1 {
                     self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
                 }
@@ -144,6 +139,38 @@ impl<'blocks> UPConv {
 
             out.copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
             self.output_fft_buff.fill(0.0);
+
+            if self.old_filter.0 {
+                let old = &self.old_filter.1[i];
+                self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
+
+                for (filter_block, fdl_block) in old.chunks(self.block_size + 1).zip(&*fdl) {
+                    for i in 0..self.block_size + 1 {
+                        self.accumulation_buffer[i] += filter_block[i] * fdl_block[i];
+                    }
+                }
+
+                self.ifft
+                    .process_with_scratch(
+                        &mut self.accumulation_buffer,
+                        &mut self.output_fft_buff,
+                        &mut [],
+                    )
+                    .unwrap();
+
+                let mut j = 0;
+                for (o, f) in out
+                    .iter_mut()
+                    .zip(&self.output_fft_buff[self.block_size..self.block_size * 2])
+                {
+                    let f_in = f32::cos(j as f32 * PI / self.block_size as f32) * 0.5 + 0.5;
+                    let f_out = 1.0 - f_in;
+                    *o *= f_in;
+                    *o += f * f_out;
+                    j += 1;
+                }
+                self.old_filter.0 = false;
+            }
         }
 
         self.output_buffs.iter().map(|o| o.as_slice())
