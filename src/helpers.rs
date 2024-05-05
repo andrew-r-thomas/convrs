@@ -19,7 +19,7 @@ pub fn process_filter(
         for i in 0..channels {
             let mut c = vec![];
             for j in 0..filter.len() {
-                if !mono && j % i == 0 {
+                if !mono && j % channels == i % channels {
                     c.push(filter[j]);
                 } else if mono {
                     c.push(filter[j]);
@@ -50,6 +50,11 @@ pub fn process_filter(
 
                 channel_vec.extend(fft_out);
             }
+            channel_vec.extend(vec![
+                Complex { re: 0.0, im: 0.0 };
+                ((part.0 + 1) * part.1) - channel_vec.len()
+            ]);
+
             part_vec.push(channel_vec);
         }
 

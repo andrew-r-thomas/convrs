@@ -27,7 +27,7 @@ struct ConverbParams {
 impl Default for Converb {
     fn default() -> Self {
         let mut reader_1 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long_stereo.wav",
+            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
         ) {
             Ok(r) => r,
             Err(e) => {
@@ -115,7 +115,7 @@ impl Default for Converb {
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
 
         let filter_1_spectrums = process_filter(&samples_1, true, 2, partition);
-        let filter_2_spectrums = process_filter(&samples_2, true, 2, partition);
+        let filter_2_spectrums = process_filter(&samples_2, false, 2, partition);
 
         let conv = Conv::new(128, filter_1_spectrums.clone(), partition, 2);
 
