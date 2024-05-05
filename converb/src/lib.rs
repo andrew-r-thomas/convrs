@@ -1,6 +1,10 @@
 pub mod editor;
+pub mod long_stereo_2;
+pub mod short_2;
 
-use convrs::{conv::Conv, helpers::process_filter, long_stereo_2::LONG_STEREO_2};
+use crate::long_stereo_2::LONG_STEREO_2;
+use crate::short_2::SHORT_2;
+use convrs::{conv::Conv, helpers::process_filter};
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
@@ -26,95 +30,9 @@ struct ConverbParams {
 
 impl Default for Converb {
     fn default() -> Self {
-        let mut reader_1 = match hound::WavReader::open(
-            "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/short2.wav",
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                nih_log!("{}", e);
-                panic!()
-            }
-        };
-
-        let bits_1 = reader_1.spec().bits_per_sample;
-        let mut samples_1: Vec<f32> = Vec::with_capacity(reader_1.len() as usize);
-        match reader_1.spec().sample_format {
-            hound::SampleFormat::Float => {
-                for s in reader_1.samples::<f32>() {
-                    samples_1.push(s.unwrap());
-                }
-            }
-            hound::SampleFormat::Int => match bits_1 {
-                8 => {
-                    for s in reader_1.samples::<i8>() {
-                        samples_1.push(s.unwrap() as f32 / i8::MAX as f32);
-                    }
-                }
-                16 => {
-                    for s in reader_1.samples::<i16>() {
-                        samples_1.push(s.unwrap() as f32 / i16::MAX as f32);
-                    }
-                }
-                24 => {
-                    for s in reader_1.samples::<i32>() {
-                        samples_1.push(s.unwrap() as f32 / i32::MAX as f32);
-                    }
-                }
-                32 => {
-                    for s in reader_1.samples::<i32>() {
-                        samples_1.push(s.unwrap() as f32 / i32::MAX as f32);
-                    }
-                }
-                _ => panic!(),
-            },
-        };
-
-        // let mut reader_2 = match hound::WavReader::open(
-        //     "/Users/andrewthomas/dev/diy/convrs/test_sounds/IRs/long_stereo2.wav",
-        // ) {
-        //     Ok(r) => r,
-        //     Err(e) => {
-        //         nih_log!("{}", e);
-        //         panic!()
-        //     }
-        // };
-
-        // let bits_2 = reader_2.spec().bits_per_sample;
-        // let mut samples_2: Vec<f32> = Vec::with_capacity(reader_2.len() as usize);
-        // match reader_2.spec().sample_format {
-        //     hound::SampleFormat::Float => {
-        //         for s in reader_2.samples::<f32>() {
-        //             samples_2.push(s.unwrap());
-        //         }
-        //     }
-        //     hound::SampleFormat::Int => match bits_2 {
-        //         8 => {
-        //             for s in reader_2.samples::<i8>() {
-        //                 samples_2.push(s.unwrap() as f32 / i8::MAX as f32);
-        //             }
-        //         }
-        //         16 => {
-        //             for s in reader_2.samples::<i16>() {
-        //                 samples_2.push(s.unwrap() as f32 / i16::MAX as f32);
-        //             }
-        //         }
-        //         24 => {
-        //             for s in reader_2.samples::<i32>() {
-        //                 samples_2.push(s.unwrap() as f32 / i32::MAX as f32);
-        //             }
-        //         }
-        //         32 => {
-        //             for s in reader_2.samples::<i32>() {
-        //                 samples_2.push(s.unwrap() as f32 / i32::MAX as f32);
-        //             }
-        //         }
-        //         _ => panic!(),
-        //     },
-        // };
-
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
 
-        let filter_1_spectrums = process_filter(&samples_1, true, 2, partition);
+        let filter_1_spectrums = process_filter(&SHORT_2, true, 2, partition);
         let filter_2_spectrums = process_filter(&LONG_STEREO_2, false, 2, partition);
 
         let conv = Conv::new(128, filter_1_spectrums.clone(), partition, 2);

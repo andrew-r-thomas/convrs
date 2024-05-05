@@ -1,4 +1,3 @@
-use nih_plug::debug::nih_log;
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
 use std::f32::consts::PI;
