@@ -6,6 +6,7 @@ use crate::long_stereo_2::LONG_STEREO_2;
 use crate::short_2::SHORT_2;
 use convrs::{conv::Conv, helpers::process_filter};
 
+use core::slice::SlicePattern;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use num::Complex;
@@ -32,6 +33,8 @@ impl Default for Converb {
     fn default() -> Self {
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
 
+        let thing: &[f32] = &[0.0; 1000];
+        process_filter([thing; 2], partition);
         let filter_1_spectrums = process_filter(&SHORT_2, true, 2, partition);
         let filter_2_spectrums = process_filter(&LONG_STEREO_2, false, 2, partition);
 
