@@ -7,8 +7,8 @@ fn correctness() {
     let signal = load_signal();
     let short = load_short();
 
-    let mut control_l = basic_fft_conv(&signal.0, &short);
-    let mut control_r = basic_fft_conv(&signal.1, &short);
+    let mut control_l = basic_fft_conv(&signal.0, &short[0]);
+    let mut control_r = basic_fft_conv(&signal.1, &short[1]);
 
     // NOTE before, i thought we were using partition that worked,
     // but we got weird click in middle, so for some reason, this is only
@@ -16,7 +16,7 @@ fn correctness() {
     // TODO probably want to make other tests with different partitions, but
     // this is good enough for basic correctness
     let partition = &[(128, 22), (1024, 21), (8192, 23)];
-    let short_processed = process_filter(&short, true, 2, partition);
+    let short_processed = process_filter(short, partition);
     let mut conv = Conv::new(128, short_processed, partition, 2);
 
     let mut test_l_out = vec![];
@@ -123,7 +123,7 @@ fn load_signal() -> (Vec<f32>, Vec<f32>) {
     (l_out, r_out)
 }
 
-fn load_short() -> Vec<f32> {
+fn load_short() -> Vec<Vec<f32>> {
     let mut reader =
         WavReader::open("/Users/andrewthomas/dev/diy/convrs/tests/test_sounds/IRs/short2.wav")
             .unwrap();
@@ -133,5 +133,5 @@ fn load_short() -> Vec<f32> {
         .map(|s| s.unwrap() as f32 / i32::MAX as f32)
         .collect();
 
-    filter
+    vec![filter.clone(), filter.clone()]
 }

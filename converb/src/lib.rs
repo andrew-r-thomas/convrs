@@ -32,8 +32,20 @@ impl Default for Converb {
     fn default() -> Self {
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
 
-        let filter_2_spectrums = process_filter(&LONG_STEREO_2, false, 2, partition);
-        let filter_1_spectrums = process_filter(&SHORT_2, true, 2, partition);
+        let mut long_l = vec![];
+        let mut long_r = vec![];
+
+        for (sample, i) in LONG_STEREO_2.iter().zip(0..) {
+            if i % 2 == 0 {
+                long_l.push(*sample);
+            } else {
+                long_r.push(*sample);
+            }
+        }
+
+        let filter_2_spectrums = process_filter(vec![long_l, long_r], partition);
+        let filter_1_spectrums =
+            process_filter(vec![Vec::from(SHORT_2), Vec::from(SHORT_2)], partition);
 
         let conv = Conv::new(128, filter_1_spectrums.clone(), partition, 2);
 
