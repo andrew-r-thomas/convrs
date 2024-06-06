@@ -6,6 +6,7 @@ use crate::long_stereo_2::LONG_STEREO_2;
 use crate::short_2::SHORT_2;
 use convrs::{conv::Conv, helpers::process_filter};
 
+use core::slice::SlicePattern;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use num::Complex;
