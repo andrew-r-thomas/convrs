@@ -13,7 +13,7 @@ nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["a
 phf = {version = "0.11.2", features = ["macros"]}
 
 [workspace]
-members = ["converb", "scratch", "xtask"]
+members = ["converb", "xtask"]
 
 [profile.release]
 lto = "thin"

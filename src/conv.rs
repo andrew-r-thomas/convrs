@@ -340,6 +340,6 @@ impl Conv {
             }
         }
 
-        self.output_buffs.iter().map(|o| o.as_slice())
+        self.output_buffs.iter().map(|o| &o[0..self.block_size])
     }
 }
