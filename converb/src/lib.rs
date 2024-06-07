@@ -9,14 +9,16 @@ use convrs::{conv::Conv, helpers::process_filter};
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use num::Complex;
-use std::sync::Arc;
+use rtrb::{Consumer, RingBuffer};
+use std::sync::{Arc, Mutex};
 
 struct Converb {
     params: Arc<ConverbParams>,
     conv: Conv,
-    filter_1: Vec<Vec<Vec<Complex<f32>>>>,
-    filter_2: Vec<Vec<Vec<Complex<f32>>>>,
+    filter_cons: Option<Consumer<Complex<f32>>>,
+    filter_buff: Vec<Complex<f32>>,
     is_filter_1: bool,
+    processed_filter_len: usize,
 }
 
 #[derive(Params)]
@@ -28,22 +30,20 @@ struct ConverbParams {
     editor_state: Arc<ViziaState>,
 }
 
+enum Tasks {
+    Filter1,
+    Filter2,
+}
+
 impl Default for Converb {
     fn default() -> Self {
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
+        let processed_filter_len = partition
+            .iter()
+            .map(|p| (p.0 + 1) * p.1)
+            .reduce(|acc, e| acc + e)
+            .unwrap();
 
-        let mut long_l = vec![];
-        let mut long_r = vec![];
-
-        for (sample, i) in LONG_STEREO_2.iter().zip(0..) {
-            if i % 2 == 0 {
-                long_l.push(*sample);
-            } else {
-                long_r.push(*sample);
-            }
-        }
-
-        let filter_2_spectrums = process_filter(vec![long_l, long_r], partition);
         let filter_1_spectrums =
             process_filter(vec![Vec::from(SHORT_2), Vec::from(SHORT_2)], partition);
 
@@ -52,9 +52,10 @@ impl Default for Converb {
         Self {
             params: Arc::new(ConverbParams::default()),
             conv,
-            filter_1: filter_1_spectrums,
-            filter_2: filter_2_spectrums,
+            filter_buff: vec![Complex { re: 0.0, im: 0.0 }; processed_filter_len],
+            filter_cons: None,
             is_filter_1: true,
+            processed_filter_len,
         }
     }
 }
@@ -103,7 +104,7 @@ impl Plugin for Converb {
     // More advanced plugins can use this to run expensive background tasks. See the field's
     // documentation for more information. `()` means that the plugin does not have any background
     // tasks.
-    type BackgroundTask = ();
+    type BackgroundTask = Tasks;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -122,18 +123,103 @@ impl Plugin for Converb {
         editor::create(self.params.clone(), self.params.editor_state.clone())
     }
 
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        // this is not a practical way to do things, but it shows how you would do the filter processing
+        // offline and send the new filter to the Conv
+        let partition = &[(128, 22), (1024, 21), (8192, 23)];
+        let processed_filter_len = partition
+            .iter()
+            .map(|p| (p.0 + 1) * p.1)
+            .reduce(|acc, e| acc + e)
+            .unwrap();
+
+        let (filter_prod, filter_cons) = RingBuffer::<Complex<f32>>::new(processed_filter_len * 2);
+        self.filter_cons = Some(filter_cons);
+
+        let safe_prod = Arc::new(Mutex::new(filter_prod));
+
+        Box::new(move |task| match task {
+            Tasks::Filter1 => {
+                let filter_1_spectrums =
+                    process_filter(vec![Vec::from(SHORT_2), Vec::from(SHORT_2)], partition);
+
+                match safe_prod
+                    .clone()
+                    .lock()
+                    .unwrap()
+                    .write_chunk(processed_filter_len)
+                {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+                        s1.copy_from_slice(&filter_1_spectrums[0..s1.len()]);
+                        s2.copy_from_slice(&filter_1_spectrums[s1.len()..s1.len() + s2.len()]);
+                        w.commit_all();
+                    }
+                    Err(_) => todo!(),
+                }
+            }
+            Tasks::Filter2 => {
+                let mut long_l = vec![];
+                let mut long_r = vec![];
+
+                for (sample, i) in LONG_STEREO_2.iter().zip(0..) {
+                    if i % 2 == 0 {
+                        long_l.push(*sample);
+                    } else {
+                        long_r.push(*sample);
+                    }
+                }
+                let filter_2_spectrums = process_filter(vec![long_l, long_r], partition);
+
+                match safe_prod
+                    .clone()
+                    .lock()
+                    .unwrap()
+                    .write_chunk(processed_filter_len)
+                {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+                        s1.copy_from_slice(&filter_2_spectrums[0..s1.len()]);
+                        s2.copy_from_slice(&filter_2_spectrums[s1.len()..s1.len() + s2.len()]);
+                        w.commit_all();
+                    }
+                    Err(_) => todo!(),
+                }
+            }
+        })
+    }
+
     fn process(
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
+        context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         if self.params.filter_1.value() != self.is_filter_1 {
             if self.params.filter_1.value() {
-                self.conv.update_filter(&self.filter_1);
+                context.execute_background(Tasks::Filter1);
             } else {
-                self.conv.update_filter(&self.filter_2);
+                context.execute_background(Tasks::Filter2);
             }
+        }
+
+        if !self.filter_cons.as_ref().unwrap().is_empty() {
+            match self
+                .filter_cons
+                .as_mut()
+                .unwrap()
+                .read_chunk(self.processed_filter_len)
+            {
+                Ok(r) => {
+                    let (s1, s2) = r.as_slices();
+                    self.filter_buff[0..s1.len()].copy_from_slice(s1);
+                    self.filter_buff[s1.len()..s1.len() + s2.len()].copy_from_slice(s2);
+                    r.commit_all();
+                }
+                Err(_) => todo!(),
+            }
+
+            self.conv.update_filter(self.filter_buff);
 
             self.is_filter_1 = self.params.filter_1.value();
         }
