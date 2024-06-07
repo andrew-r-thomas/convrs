@@ -23,7 +23,7 @@ pub struct UPConv {
 impl UPConv {
     pub fn new(
         block_size: usize,
-        starting_filter: Vec<Vec<Complex<f32>>>,
+        starting_filter: Vec<Complex<f32>>,
         channels: usize,
         num_blocks: usize,
     ) -> Self {

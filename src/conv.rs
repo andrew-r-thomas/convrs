@@ -5,6 +5,12 @@ use std::thread;
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 
+/*
+TODO
+- need to be able to read and write straight slices from ringbuf, so probably a dedicated filter struct
+- this may lead us to wanting to move away from vecs, which we want to do eventually anyway
+*/
+
 pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
@@ -35,11 +41,10 @@ enum Message {
 impl Conv {
     pub fn new(
         block_size: usize,
-        starting_filter: Vec<Vec<Vec<Complex<f32>>>>,
+        starting_filter: Vec<Complex<f32>>,
         partition: &[(usize, usize)],
         channels: usize,
     ) -> Self {
-        assert!(starting_filter.first().unwrap().len() == channels);
         let mut filter_index = 0;
 
         let rt_segment = UPConv::new(
@@ -203,7 +208,7 @@ impl Conv {
     pub fn update_filter<'filter>(
         &mut self,
         // chunks are on the outside, then channels inside that, then block inside that
-        new_filter: &Vec<Vec<Vec<Complex<f32>>>>,
+        new_filter: Vec<Complex<f32>>,
     ) {
         let mut filter_iter = new_filter.into_iter();
         self.rt_segment
