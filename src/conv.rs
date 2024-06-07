@@ -15,10 +15,11 @@ pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
     buff_len: usize,
-    input_buffs: Vec<Vec<f32>>,
-    output_buffs: Vec<Vec<f32>>,
+    input_buffs: Vec<f32>,
+    output_buffs: Vec<f32>,
     cycle_count: usize,
     block_size: usize,
+    partition: Vec<(usize, usize)>,
     channels: usize,
 }
 
@@ -46,15 +47,11 @@ impl Conv {
         channels: usize,
     ) -> Self {
         let mut filter_index = 0;
+        let first_part = &starting_filter[0..(partition[0].0 + 1) * partition[0].1 * channels];
 
-        let rt_segment = UPConv::new(
-            partition[0].0,
-            starting_filter[0].clone(),
-            channels,
-            partition[0].1,
-        );
+        let rt_segment = UPConv::new(partition[0].0, first_part, channels, partition[0].1);
 
-        filter_index += partition[0].0 * partition[0].1;
+        filter_index += partition[0].0 * partition[0].1 * channels;
 
         let mut non_rt_segments = vec![];
         if partition.len() > 1 {
@@ -85,9 +82,14 @@ impl Conv {
                     filter_conss.push(filter_cons);
                 }
 
-                let mut upconv = UPConv::new(p.0, starting_filter[i].clone(), channels, p.1);
+                let mut upconv = UPConv::new(
+                    p.0,
+                    &starting_filter[filter_index..filter_index + ((p.0 + 1) * p.1 * channels)],
+                    channels,
+                    p.1,
+                );
 
-                filter_index = (filter_index + (p.0 * p.1)).min(starting_filter.len());
+                filter_index = filter_index + ((p.0 + 1) * p.1) * channels;
 
                 thread::spawn(move || {
                     // TODO a raw loop i feel like is a really bad idea here
@@ -201,6 +203,7 @@ impl Conv {
             cycle_count: 0,
             block_size,
             buff_len,
+            partition: Vec::from(partition),
             channels,
         }
     }
@@ -208,15 +211,24 @@ impl Conv {
     pub fn update_filter<'filter>(
         &mut self,
         // chunks are on the outside, then channels inside that, then block inside that
-        new_filter: Vec<Complex<f32>>,
+        new_filter: &[Complex<f32>],
     ) {
-        let mut filter_iter = new_filter.into_iter();
-        self.rt_segment
-            .update_filter(filter_iter.next().unwrap().iter().map(|f| f.as_slice()));
+        let mut filter_index = 0;
+        self.rt_segment.update_filter(
+            new_filter[0..(self.partition[0].0 + 1) * self.partition[0].1 * self.channels]
+                .chunks_exact((self.partition[0].0 + 1) * self.partition[0].1),
+        );
+        filter_index += (self.partition[0].0 + 1) * self.partition[0].1 * self.channels;
 
         // we're relying on the ordering being correct here
-        for (seg, filter_chunk) in self.non_rt_segments.iter_mut().zip(filter_iter) {
-            for (prod, channel_chunk) in seg.filter_prods.iter_mut().zip(filter_chunk.into_iter()) {
+        for seg in self.non_rt_segments.iter_mut() {
+            let filter_chunk = &new_filter[filter_index
+                ..filter_index + ((seg.partition.0 + 1) * seg.partition.1 * self.channels)];
+            for (prod, channel_chunk) in seg
+                .filter_prods
+                .iter_mut()
+                .zip(filter_chunk.chunks_exact((seg.partition.0 + 1) * seg.partition.1))
+            {
                 match prod.write_chunk((seg.partition.0 + 1) * seg.partition.1) {
                     Ok(mut w) => {
                         let (s1, s2) = w.as_mut_slices();
@@ -238,6 +250,8 @@ impl Conv {
                 Ok(_) => {}
                 Err(_) => todo!(),
             }
+
+            filter_index += (seg.partition.0 + 1) * seg.partition.0 * self.channels;
         }
     }
 

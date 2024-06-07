@@ -2,8 +2,6 @@ pub mod editor;
 pub mod long_stereo_2;
 pub mod short_2;
 
-use crate::long_stereo_2::LONG_STEREO_2;
-use crate::short_2::SHORT_2;
 use convrs::{conv::Conv, helpers::process_filter};
 
 use nih_plug::prelude::*;
@@ -44,6 +42,7 @@ impl Default for Converb {
             .reduce(|acc, e| acc + e)
             .unwrap();
 
+        // TODO use `include_bytes!` instead
         let filter_1_spectrums =
             process_filter(vec![Vec::from(SHORT_2), Vec::from(SHORT_2)], partition);
 
@@ -219,7 +218,7 @@ impl Plugin for Converb {
                 Err(_) => todo!(),
             }
 
-            self.conv.update_filter(self.filter_buff);
+            self.conv.update_filter(&self.filter_buff);
 
             self.is_filter_1 = self.params.filter_1.value();
         }

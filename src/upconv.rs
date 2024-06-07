@@ -6,29 +6,26 @@ use std::sync::Arc;
 pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
-    input_buffs: Vec<Vec<f32>>,
+    input_buffs: Vec<f32>,
     input_fft_buff: Vec<f32>,
-    output_buffs: Vec<Vec<f32>>,
+    output_buffs: Vec<f32>,
     output_fft_buff: Vec<f32>,
     block_size: usize,
-    filter: Vec<Vec<Complex<f32>>>,
-    // TODO lol this type just makes me not feel very good about life
-    fdls: Vec<Vec<Vec<Complex<f32>>>>,
+    filter: Vec<Complex<f32>>,
+    fdls: Vec<Complex<f32>>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
     channels: usize,
-    old_filter: (bool, Vec<Vec<Complex<f32>>>),
+    old_filter: (bool, Vec<Complex<f32>>),
 }
 
 impl UPConv {
     pub fn new(
         block_size: usize,
-        starting_filter: Vec<Complex<f32>>,
+        starting_filter: &[Complex<f32>],
         channels: usize,
         num_blocks: usize,
     ) -> Self {
-        assert!(starting_filter.len() == channels);
-
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
         let ifft = planner.plan_fft_inverse(block_size * 2);
@@ -47,6 +44,12 @@ impl UPConv {
         let fdls =
             vec![vec![vec![Complex { re: 0.0, im: 0.0 }; block_size + 1]; num_blocks]; channels];
 
+        let mut filter = vec![];
+        for filter_chunk in starting_filter.chunks_exact((block_size + 1) * num_blocks) {
+            let vec = Vec::from(filter_chunk);
+            filter.push(vec);
+        }
+
         Self {
             fft,
             ifft,
@@ -55,7 +58,7 @@ impl UPConv {
             input_fft_buff,
             output_buffs,
             output_fft_buff,
-            filter: starting_filter,
+            filter,
             fdls,
             accumulation_buffer,
             new_spectrum_buff,
