@@ -10,6 +10,11 @@ pub fn process_filter(filter: Vec<Vec<f32>>, partition: &[(usize, usize)]) -> Ve
     let mut planner = RealFftPlanner::<f32>::new();
     let mut ffts = partition.iter().map(|p| planner.plan_fft_forward(p.0 * 2));
 
+    let out_len: usize = partition
+        .iter()
+        .map(|p| (p.0 + 1) * p.1 * filter.len())
+        .sum();
+
     let mut out = vec![];
 
     let mut filter_index = 0;
@@ -43,5 +48,6 @@ pub fn process_filter(filter: Vec<Vec<f32>>, partition: &[(usize, usize)]) -> Ve
         filter_index += part.0 * part.1;
         out.extend(part_vec);
     }
+    assert!(out.len() == out_len);
     out
 }

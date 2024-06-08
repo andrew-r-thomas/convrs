@@ -37,11 +37,7 @@ enum Tasks {
 impl Default for Converb {
     fn default() -> Self {
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
-        let processed_filter_len = partition
-            .iter()
-            .map(|p| (p.0 + 1) * p.1)
-            .reduce(|acc, e| acc + e)
-            .unwrap();
+        let processed_filter_len = partition.iter().map(|p| (p.0 + 1) * p.1 * 2).sum();
 
         // TODO use `include_bytes!` instead
         let mut reader =
@@ -135,11 +131,7 @@ impl Plugin for Converb {
         // this is not a practical way to do things, but it shows how you would do the filter processing
         // offline and send the new filter to the Conv
         let partition = &[(128, 22), (1024, 21), (8192, 23)];
-        let processed_filter_len = partition
-            .iter()
-            .map(|p| (p.0 + 1) * p.1)
-            .reduce(|acc, e| acc + e)
-            .unwrap();
+        let processed_filter_len = partition.iter().map(|p| (p.0 + 1) * p.1 * 2).sum();
 
         let (filter_prod, filter_cons) = RingBuffer::<Complex<f32>>::new(processed_filter_len * 2);
         self.filter_cons = Some(filter_cons);

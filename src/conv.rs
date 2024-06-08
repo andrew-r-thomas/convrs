@@ -1,4 +1,3 @@
-use nih_plug::debug::nih_log;
 use realfft::num_complex::Complex;
 use std::thread;
 
@@ -197,8 +196,6 @@ impl Conv {
             out_channel.copy_within(self.block_size..self.buff_len * 2, 0);
             out_channel[self.buff_len - self.block_size..self.buff_len].fill(0.0);
         }
-
-        // TODO ok we might be off by a block size, but it sounds solid and is good enough for checking shit now
 
         for segment in &mut self.non_rt_segments {
             // first we check if its time to send and recieve a new block

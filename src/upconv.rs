@@ -139,7 +139,7 @@ impl UPConv {
                 .copy_from_slice(&self.output_fft_buff[self.block_size..self.block_size * 2]);
 
             if self.old_filter.0 {
-                todo!();
+                // TODO
                 // let old = &self.old_filter.1[i];
                 // self.accumulation_buffer.fill(Complex { re: 0.0, im: 0.0 });
 
