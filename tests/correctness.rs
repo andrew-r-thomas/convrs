@@ -17,13 +17,14 @@ fn correctness() {
     // this is good enough for basic correctness
     let partition = &[(128, 22), (1024, 21), (8192, 23)];
     let short_processed = process_filter(short, partition);
-    let mut conv = Conv::new(128, short_processed, partition, 2);
+    let mut conv = Conv::new(128, &short_processed, partition, 2);
 
     let mut test_l_out = vec![];
     let mut test_r_out = vec![];
 
     for (l_block, r_block) in signal.0.chunks_exact(128).zip(signal.1.chunks_exact(128)) {
-        let mut out = conv.process_block([l_block, r_block]).into_iter();
+        let vec = [l_block, r_block].concat();
+        let mut out = conv.process_block(vec.chunks_exact(128));
 
         let out_l = out.next().unwrap();
         let out_r = out.next().unwrap();
