@@ -1,3 +1,5 @@
+use std::{thread, time::Duration};
+
 use convrs::{self, conv::Conv, helpers::process_filter};
 use hound::{WavReader, WavSpec, WavWriter};
 use realfft::{num_complex::Complex, RealFftPlanner};
@@ -24,6 +26,9 @@ fn correctness() {
 
     for (l_block, r_block) in signal.0.chunks_exact(128).zip(signal.1.chunks_exact(128)) {
         let vec = [l_block, r_block].concat();
+
+        thread::sleep(Duration::from_millis(3));
+
         let mut out = conv.process_block(vec.chunks_exact(128));
 
         let out_l = out.next().unwrap();
