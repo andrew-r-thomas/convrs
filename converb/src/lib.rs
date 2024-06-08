@@ -4,6 +4,7 @@ pub mod short_2;
 
 use convrs::{conv::Conv, helpers::process_filter};
 
+use hound::WavReader;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use num::Complex;
@@ -43,10 +44,18 @@ impl Default for Converb {
             .unwrap();
 
         // TODO use `include_bytes!` instead
-        let filter_1_spectrums =
-            process_filter(vec![Vec::from(SHORT_2), Vec::from(SHORT_2)], partition);
+        let mut reader =
+            WavReader::new(&include_bytes!("../../tests/test_sounds/IRs/short2.wav")[..]).unwrap();
+        let filter_samples: Vec<f32> = reader
+            .samples::<i32>()
+            .map(|s| s.unwrap() as f32 / i32::MAX as f32)
+            .collect();
+        let filter_1_spectrums = process_filter(
+            vec![filter_samples.clone(), filter_samples.clone()],
+            partition,
+        );
 
-        let conv = Conv::new(128, filter_1_spectrums.clone(), partition, 2);
+        let conv = Conv::new(128, &filter_1_spectrums, partition, 2);
 
         Self {
             params: Arc::new(ConverbParams::default()),
@@ -139,8 +148,17 @@ impl Plugin for Converb {
 
         Box::new(move |task| match task {
             Tasks::Filter1 => {
-                let filter_1_spectrums =
-                    process_filter(vec![Vec::from(SHORT_2), Vec::from(SHORT_2)], partition);
+                let mut reader =
+                    WavReader::new(&include_bytes!("../../tests/test_sounds/IRs/short2.wav")[..])
+                        .unwrap();
+                let filter_samples: Vec<f32> = reader
+                    .samples::<i32>()
+                    .map(|s| s.unwrap() as f32 / i32::MAX as f32)
+                    .collect();
+                let filter_1_spectrums = process_filter(
+                    vec![filter_samples.clone(), filter_samples.clone()],
+                    partition,
+                );
 
                 match safe_prod
                     .clone()
@@ -161,7 +179,17 @@ impl Plugin for Converb {
                 let mut long_l = vec![];
                 let mut long_r = vec![];
 
-                for (sample, i) in LONG_STEREO_2.iter().zip(0..) {
+                let mut reader = WavReader::new(
+                    &include_bytes!("../../tests/test_sounds/IRs/long_stereo2.wav")[..],
+                )
+                .unwrap();
+
+                let filter_samples: Vec<f32> = reader
+                    .samples::<i32>()
+                    .map(|s| s.unwrap() as f32 / i32::MAX as f32)
+                    .collect();
+
+                for (sample, i) in filter_samples.iter().zip(0..) {
                     if i % 2 == 0 {
                         long_l.push(*sample);
                     } else {

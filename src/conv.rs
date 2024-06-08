@@ -1,3 +1,4 @@
+use nih_plug::debug::nih_log;
 use realfft::num_complex::Complex;
 use std::thread;
 
@@ -128,7 +129,7 @@ impl Conv {
         // TODO this might be more buffer than we need,
         // we might need just the last block size plus the main block size
         let input_buff = vec![0.0; partition.last().unwrap().0 * channels];
-        let output_buff = vec![0.0; partition.last().unwrap().0 * channels];
+        let output_buff = vec![0.0; partition.last().unwrap().0 * 2 * channels];
 
         let buff_len = partition.last().unwrap().0;
 
@@ -187,13 +188,13 @@ impl Conv {
         for ((in_channel, out_channel), block) in self
             .input_buff
             .chunks_exact_mut(self.buff_len)
-            .zip(self.output_buff.chunks_exact_mut(self.buff_len))
+            .zip(self.output_buff.chunks_exact_mut(self.buff_len * 2))
             .zip(channel_blocks)
         {
             in_channel.copy_within(self.block_size..self.buff_len, 0);
             in_channel[self.buff_len - self.block_size..self.buff_len].copy_from_slice(block);
 
-            out_channel.copy_within(self.block_size..self.buff_len, 0);
+            out_channel.copy_within(self.block_size..self.buff_len * 2, 0);
             out_channel[self.buff_len - self.block_size..self.buff_len].fill(0.0);
         }
 
@@ -254,8 +255,9 @@ impl Conv {
                         let mut s1_idx = 0;
                         let mut s2_idx = 0;
 
-                        for out_channel in self.output_buff.chunks_exact_mut(self.buff_len) {
-                            let to_write = &mut out_channel[0..segment.block_size];
+                        for out_channel in self.output_buff.chunks_exact_mut(self.buff_len * 2) {
+                            let to_write = &mut out_channel
+                                [self.block_size..segment.block_size + self.block_size];
 
                             if s1_idx + segment.block_size < s1.len() {
                                 for (o, s) in to_write
@@ -310,15 +312,15 @@ impl Conv {
         let rt_out = self.rt_segment.process_block(map);
         for (new, out) in rt_out
             .chunks_exact(self.block_size)
-            .zip(&mut self.output_buff.chunks_exact_mut(self.buff_len))
+            .zip(&mut self.output_buff.chunks_exact_mut(self.buff_len * 2))
         {
-            for (o, n) in out.iter_mut().zip(new) {
+            for (o, n) in out[0..self.block_size].iter_mut().zip(new) {
                 *o += *n;
             }
         }
 
         self.output_buff
-            .chunks_exact(self.buff_len)
+            .chunks_exact(self.buff_len * 2)
             .map(|o| &o[0..self.block_size])
     }
 }
