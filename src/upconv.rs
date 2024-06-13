@@ -60,10 +60,10 @@ impl UPConv {
 
     // this is block size * channels
     pub fn push_filter_block(&mut self, filter_block: &[f32]) {
-        for (channel_block, channel_fdl) in filter_block.chunks_exact(self.block_size).zip(
-            self.filter_fdl
-                .chunks_exact_mut(self.block_size * self.num_blocks),
-        ) {
+        for (channel_block, channel_fdl) in filter_block
+            .chunks_exact(self.block_size)
+            .zip(self.filter_fdl.chunks_exact_mut(self.block_size))
+        {
             self.input_fft_buff.fill(0.0);
             self.input_fft_buff[0..channel_block.len()].copy_from_slice(channel_block);
             self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
