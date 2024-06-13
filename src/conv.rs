@@ -4,12 +4,6 @@ use std::thread;
 use crate::upconv::UPConv;
 use rtrb::{Consumer, Producer, RingBuffer};
 
-/*
-TODO
-- need to be able to read and write straight slices from ringbuf, so probably a dedicated filter struct
-- this may lead us to wanting to move away from vecs, which we want to do eventually anyway
-*/
-
 pub struct Conv {
     rt_segment: UPConv,
     non_rt_segments: Vec<SegmentHandle>,
