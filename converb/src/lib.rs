@@ -1,6 +1,4 @@
 pub mod editor;
-pub mod long_stereo_2;
-pub mod short_2;
 
 use convrs::{conv::Conv, helpers::process_filter};
 
