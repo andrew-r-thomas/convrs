@@ -64,11 +64,11 @@ impl UPConv {
     }
 
     // filter chunk should be p.0 * channels
-    pub fn push_filter_chunk(&mut self, filter_chunk: &[f32]) {
-        for (chunk_channel, channel) in filter_chunk
-            .chunks_exact(self.block_size)
-            .zip(0..self.channels)
-        {
+    pub fn push_filter_chunk<'push_filter_chunk>(
+        &mut self,
+        filter_chunk: impl Iterator<Item = &'push_filter_chunk [f32]>,
+    ) {
+        for (chunk_channel, channel) in filter_chunk.zip(0..self.channels) {
             self.input_fft_buff.fill(0.0);
             self.input_buff[0..self.block_size].copy_from_slice(chunk_channel);
             self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
@@ -84,6 +84,7 @@ impl UPConv {
             self.filter.push_block(&self.new_spectrum_buff, channel);
         }
     }
+
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
     /// so there will be one block size slice of samples per channel in block
     pub fn process_block<'blocks>(

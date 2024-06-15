@@ -1,46 +1,8 @@
 use std::thread;
 
-use realfft::num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use crate::upconv::UPConv;
-
-/*
-NOTE
-
-questions:
-- does the filter block size for pushing need to be a certain size
-
-    so the whole reason that we're doing this is because we can't do all
-    these ffts every frame, so we should think about the sizing for the filter
-    to be exactly the same as the signal
-
-    so we definitely dont want to be ffting more than a segments block size
-    of filter at a time
-
-    which i think means the updates to the filter will have to come in the rt segments
-    block size chunks at a time
-
-    this doesnt mean that a frame of the game will have to only be one rt segment
-    block size large though, because we will get through many blocks of audio
-    per frame of graphics
-
-    for example, say we are rendering at 30fps, and our block size is 128
-    and our sample rate is 48000. one frame is rendered every 1/30 seconds
-    which would be 12.5 128 sample blocks per frame
-
-    this means our game size could cover as much as 1600 samples
-    which is very large for the averages IR conversion, and very short for the
-    spiral thing
-
-    so for a 512 by 512 board, we would want to get one sample from ~163 pixels
-
-- if its flexible^, how do we want to handle pushing
-- for dynamically changing the size of the reverb,
-  we will want a way to dynamically change how much we are convolving
-  and basically not compute some amount of tail end at will.
-  this will need to go across segments as well
-*/
 
 /*
 TODO
@@ -68,7 +30,7 @@ struct SegmentHandle {
     avail: usize,
     rt_prod: Producer<f32>,
     rt_cons: Consumer<f32>,
-    filter_prod: Producer<Complex<f32>>,
+    filter_prod: Producer<f32>,
     partition: (usize, usize),
 }
 
@@ -86,7 +48,7 @@ impl MovingConv {
                 let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * channels * 1000);
 
                 let (filter_prod, mut filter_cons) =
-                    RingBuffer::<Complex<f32>>::new((p.0 + 1) * p.1 * channels * 2);
+                    RingBuffer::<f32>::new((p.0 + 1) * p.1 * channels * 2);
 
                 let mut upconv = UPConv::new(p.0, None, channels, p.1);
 
@@ -95,11 +57,11 @@ impl MovingConv {
                     // so consider this pseudocode for now
                     loop {
                         if !filter_cons.is_empty() {
-                            match filter_cons.read_chunk((p.0 + 1) * p.1 * channels) {
+                            match filter_cons.read_chunk(p.0 * channels) {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    upconv.set_filter(&[s1, s2].concat());
+                                    upconv.push_filter_chunk([s1, s2].concat().chunks_exact(p.0));
 
                                     r.commit_all();
                                 }
@@ -172,12 +134,66 @@ impl MovingConv {
     // so for now, filter_chunk is block_size * channels
     pub fn push_filter_chunk(&mut self, filter_chunk: &[f32]) {
         self.filter_cycle_count += 1;
+        let block_size = self.partition.first().unwrap().0;
+        let filter_channel_len =
+            self.partition.last().unwrap().0 * self.partition.last().unwrap().0;
 
         for (filter_channel, chunk_channel) in self
             .filter_buff
-            .chunks_exact_mut(self.partition.last().unwrap().0 * self.partition.last().unwrap().1)
-            .zip(filter_chunk.chunks_exact(self.partition.first().unwrap().0))
-        {}
+            .chunks_exact_mut(filter_channel_len)
+            .zip(filter_chunk.chunks_exact(block_size))
+        {
+            filter_channel.copy_within(0..filter_channel.len() - block_size, block_size);
+
+            filter_channel[0..block_size].copy_from_slice(chunk_channel);
+        }
+
+        for segment in &mut self.non_rt_segments {
+            if self.filter_cycle_count % segment.avail == 0 {
+                match segment
+                    .filter_prod
+                    .write_chunk(segment.partition.0 * self.channels)
+                {
+                    Ok(mut w) => {
+                        let (s1, s2) = w.as_mut_slices();
+
+                        let mut s1_idx = 0;
+                        let mut s2_idx = 0;
+                        let s1_len = s1.len();
+
+                        for filter_channel in self.filter_buff.chunks_exact(filter_channel_len) {
+                            let to_write = &filter_channel[0..segment.partition.0];
+                            if s1_idx + segment.partition.0 < s1.len() {
+                                s1[s1_idx..segment.partition.0].copy_from_slice(to_write);
+
+                                s1_idx += segment.partition.0;
+                            } else if s1_idx < s1.len() {
+                                s1[s1_idx..s1_len].copy_from_slice(&to_write[0..s1_len - s1_idx]);
+                                s2[0..segment.partition.0 - (s1.len() - s1_idx)].copy_from_slice(
+                                    &to_write[s1.len() - s1_idx..segment.partition.0],
+                                );
+
+                                s2_idx += segment.partition.0 - (s1.len() - s1_idx);
+                                s1_idx = s1.len();
+                            } else {
+                                s2[s2_idx..segment.partition.0].copy_from_slice(to_write);
+
+                                s2_idx += segment.partition.0;
+                            }
+                        }
+
+                        w.commit_all();
+                    }
+                    Err(_) => todo!(),
+                }
+            }
+        }
+
+        self.rt_segment.push_filter_chunk(
+            self.filter_buff
+                .chunks_exact(filter_channel_len)
+                .map(|b| &b[0..block_size]),
+        );
     }
 
     pub fn process_block<'block>(

@@ -44,6 +44,7 @@ impl Fdl {
         channel_buff[0..self.block_size + 1].copy_from_slice(block);
     }
 
+    // TODO simd
     pub fn mul_blocks(&self, other: &Self, accum_buff: &mut [Complex<f32>], channel: usize) {
         let start = (self.block_size + 1) * self.num_blocks * channel;
         let end = start + ((self.block_size + 1) * self.num_blocks);
