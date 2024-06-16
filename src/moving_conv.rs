@@ -113,8 +113,7 @@ impl MovingConv {
         // we might need just the last block size plus the main block size
         let input_buff = vec![0.0; partition.last().unwrap().0 * channels];
         let output_buff = vec![0.0; partition.last().unwrap().0 * 2 * channels];
-        let filter_buff =
-            vec![0.0; partition.last().unwrap().0 * partition.last().unwrap().1 * channels];
+        let filter_buff = vec![0.0; partition.last().unwrap().0 * channels];
 
         Self {
             rt_segment,
@@ -135,8 +134,7 @@ impl MovingConv {
     pub fn push_filter_chunk(&mut self, filter_chunk: &[f32]) {
         self.filter_cycle_count += 1;
         let block_size = self.partition.first().unwrap().0;
-        let filter_channel_len =
-            self.partition.last().unwrap().0 * self.partition.last().unwrap().0;
+        let filter_channel_len = self.partition.last().unwrap().0;
 
         for (filter_channel, chunk_channel) in self
             .filter_buff

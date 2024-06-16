@@ -69,8 +69,9 @@ impl UPConv {
         filter_chunk: impl Iterator<Item = &'push_filter_chunk [f32]>,
     ) {
         for (chunk_channel, channel) in filter_chunk.zip(0..self.channels) {
+            println!("chunk channel: {:?}", chunk_channel);
             self.input_fft_buff.fill(0.0);
-            self.input_buff[0..self.block_size].copy_from_slice(chunk_channel);
+            self.input_fft_buff[0..self.block_size].copy_from_slice(chunk_channel);
             self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
 
             self.fft

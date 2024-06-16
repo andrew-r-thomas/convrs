@@ -10,6 +10,7 @@ realfft = "3.3.0"
 rtrb = "0.3.0"
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 generic-array = "1.0.0"
+itertools = "0.13.0"
 
 [workspace]
 members = ["converb", "xtask"]

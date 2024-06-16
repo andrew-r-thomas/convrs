@@ -1,6 +1,6 @@
 use std::{thread, time::Duration};
 
-use convrs::{self, conv::Conv, helpers::process_filter};
+use convrs::{self, conv::Conv, helpers::process_filter, moving_conv::MovingConv};
 use hound::{WavReader, WavSpec, WavWriter};
 use realfft::{num_complex::Complex, RealFftPlanner};
 
@@ -8,6 +8,9 @@ use realfft::{num_complex::Complex, RealFftPlanner};
 fn correctness() {
     let signal = load_signal();
     let short = load_short();
+
+    let short_l = &short[0];
+    let short_r = &short[1];
 
     let mut control_l = basic_fft_conv(&signal.0, &short[0]);
     let mut control_r = basic_fft_conv(&signal.1, &short[1]);
@@ -18,16 +21,24 @@ fn correctness() {
     // TODO probably want to make other tests with different partitions, but
     // this is good enough for basic correctness
     let partition = &[(128, 22), (1024, 21), (8192, 23)];
-    let short_processed = process_filter(short, partition);
-    let mut conv = Conv::new(128, &short_processed, partition, 2);
+    let mut conv = MovingConv::new(2, partition);
 
     let mut test_l_out = vec![];
     let mut test_r_out = vec![];
 
+    let mut short_l_iter = short_l.chunks_exact(128);
+    let mut short_r_iter = short_r.chunks_exact(128);
     for (l_block, r_block) in signal.0.chunks_exact(128).zip(signal.1.chunks_exact(128)) {
         let vec = [l_block, r_block].concat();
-
-        thread::sleep(Duration::from_millis(3));
+        let l_filter = short_l_iter.next();
+        let r_filter = short_r_iter.next();
+        match (l_filter, r_filter) {
+            (Some(l), Some(r)) => {
+                let filter_vec = [l, r].concat();
+                conv.push_filter_chunk(&filter_vec);
+            }
+            _ => {}
+        }
 
         let mut out = conv.process_block(vec.chunks_exact(128));
 
@@ -36,6 +47,8 @@ fn correctness() {
 
         test_l_out.extend_from_slice(out_l);
         test_r_out.extend_from_slice(out_r);
+
+        thread::sleep(Duration::from_millis(3));
     }
 
     // TODO this is little bit heuristic, see if we can find general way to
@@ -49,7 +62,10 @@ fn correctness() {
     }
 
     write_to_wav((control_l.as_slice(), control_r.as_slice()), "control.wav");
-    write_to_wav((test_l_out.as_slice(), test_r_out.as_slice()), "test.wav");
+    write_to_wav(
+        (test_l_out.as_slice(), test_r_out.as_slice()),
+        "test_move.wav",
+    );
 }
 
 fn basic_fft_conv<'fft_conv>(signal: &[f32], filter: &[f32]) -> Vec<f32> {
