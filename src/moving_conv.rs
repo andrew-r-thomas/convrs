@@ -36,7 +36,8 @@ struct SegmentHandle {
 
 impl MovingConv {
     pub fn new(channels: usize, partition: &[(usize, usize)]) -> Self {
-        let rt_segment = UPConv::new(partition[0].0, None, channels, partition[0].1);
+        let fdls = &["signal", "filter"];
+        let rt_segment = UPConv::new(partition[0].0, channels, partition[0].1, fdls);
 
         let mut non_rt_segments = vec![];
         if partition.len() > 1 {
@@ -50,7 +51,7 @@ impl MovingConv {
                 let (filter_prod, mut filter_cons) =
                     RingBuffer::<f32>::new((p.0 + 1) * p.1 * channels * 2);
 
-                let mut upconv = UPConv::new(p.0, None, channels, p.1);
+                let mut upconv = UPConv::new(p.0, channels, p.1, fdls);
 
                 thread::spawn(move || {
                     // TODO a raw loop i feel like is a really bad idea here
@@ -61,7 +62,8 @@ impl MovingConv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    upconv.push_filter_chunk([s1, s2].concat().chunks_exact(p.0));
+                                    upconv
+                                        .push_chunk("filter", [s1, s2].concat().chunks_exact(p.0));
 
                                     r.commit_all();
                                 }
@@ -73,8 +75,9 @@ impl MovingConv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    let out =
-                                        upconv.process_block([s1, s2].concat().chunks_exact(p.0));
+                                    upconv
+                                        .push_chunk("signal", [s1, s2].concat().chunks_exact(p.0));
+                                    let out = upconv.process("signal", "filter");
 
                                     match seg_prod.write_chunk(p.0 * channels) {
                                         Ok(mut w) => {
@@ -187,7 +190,8 @@ impl MovingConv {
             }
         }
 
-        self.rt_segment.push_filter_chunk(
+        self.rt_segment.push_chunk(
+            "filter",
             self.filter_buff
                 .chunks_exact(filter_channel_len)
                 .map(|b| &b[0..block_size]),
@@ -324,7 +328,8 @@ impl MovingConv {
             .chunks_exact(buff_len)
             .map(|i| &i[buff_len - block_size..buff_len]);
 
-        let rt_out = self.rt_segment.process_block(map);
+        self.rt_segment.push_chunk("signal", map);
+        let rt_out = self.rt_segment.process("signal", "filter");
         for (new, out) in rt_out
             .chunks_exact(block_size)
             .zip(&mut self.output_buff.chunks_exact_mut(buff_len * 2))

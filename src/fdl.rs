@@ -12,20 +12,13 @@ pub struct Fdl {
 }
 
 impl Fdl {
-    pub fn new(
-        starting_buffer: Option<&[Complex<f32>]>,
-        block_size: usize,
-        num_blocks: usize,
-        channels: usize,
-    ) -> Self {
-        let buffer = match starting_buffer {
-            Some(b) => Vec::from(b),
-            None => vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks * channels],
-        };
+    pub fn new(block_size: usize, num_blocks: usize, channels: usize) -> Self {
+        let buffer = vec![Complex { re: 0.0, im: 0.0 }; (block_size + 1) * num_blocks * channels];
+        let input_buff = vec![0.0; block_size * 2 * channels];
 
         Self {
             buffer,
-            input_buff: vec![0.0; block_size * 2],
+            input_buff,
             block_size,
             num_blocks,
             channels,
@@ -39,7 +32,7 @@ impl Fdl {
     pub fn push_block(
         &mut self,
         block: &[f32],
-        fft: Arc<dyn RealToComplex<f32>>,
+        fft: &Arc<dyn RealToComplex<f32>>,
         fft_in_buff: &mut [f32],
         channel: usize,
     ) {
