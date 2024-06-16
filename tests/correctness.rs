@@ -9,9 +9,6 @@ fn correctness() {
     let signal = load_signal();
     let short = load_short();
 
-    let short_l = &short[0];
-    let short_r = &short[1];
-
     let mut control_l = basic_fft_conv(&signal.0, &short[0]);
     let mut control_r = basic_fft_conv(&signal.1, &short[1]);
 
@@ -21,24 +18,14 @@ fn correctness() {
     // TODO probably want to make other tests with different partitions, but
     // this is good enough for basic correctness
     let partition = &[(128, 22), (1024, 21), (8192, 23)];
-    let mut conv = MovingConv::new(2, partition);
+    let processed_filter = process_filter(short, partition);
+    let mut conv = Conv::new(128, &processed_filter, partition, 2);
 
     let mut test_l_out = vec![];
     let mut test_r_out = vec![];
 
-    let mut short_l_iter = short_l.chunks_exact(128);
-    let mut short_r_iter = short_r.chunks_exact(128);
     for (l_block, r_block) in signal.0.chunks_exact(128).zip(signal.1.chunks_exact(128)) {
         let vec = [l_block, r_block].concat();
-        let l_filter = short_l_iter.next();
-        let r_filter = short_r_iter.next();
-        match (l_filter, r_filter) {
-            (Some(l), Some(r)) => {
-                let filter_vec = [l, r].concat();
-                conv.push_filter_chunk(&filter_vec);
-            }
-            _ => {}
-        }
 
         let mut out = conv.process_block(vec.chunks_exact(128));
 

@@ -34,9 +34,11 @@ impl Conv {
         channels: usize,
     ) -> Self {
         let mut filter_index = 0;
+        let fdls = &["signal", "filter"];
         let first_part = &starting_filter[0..(partition[0].0 + 1) * partition[0].1 * channels];
 
-        let rt_segment = UPConv::new(partition[0].0, Some(first_part), channels, partition[0].1);
+        let mut rt_segment = UPConv::new(partition[0].0, channels, partition[0].1, fdls);
+        rt_segment.set_fdl_buff(first_part, "filter");
 
         filter_index += (partition[0].0 + 1) * partition[0].1 * channels;
 
@@ -52,13 +54,10 @@ impl Conv {
                 let (filter_prod, mut filter_cons) =
                     RingBuffer::<Complex<f32>>::new((p.0 + 1) * p.1 * channels * 2);
 
-                let mut upconv = UPConv::new(
-                    p.0,
-                    Some(
-                        &starting_filter[filter_index..filter_index + ((p.0 + 1) * p.1 * channels)],
-                    ),
-                    channels,
-                    p.1,
+                let mut upconv = UPConv::new(p.0, channels, p.1, fdls);
+                upconv.set_fdl_buff(
+                    &starting_filter[filter_index..filter_index + ((p.0 + 1) * p.1 * channels)],
+                    "filter",
                 );
 
                 filter_index += ((p.0 + 1) * p.1) * channels;
@@ -72,7 +71,7 @@ impl Conv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    upconv.set_filter(&[s1, s2].concat());
+                                    upconv.set_fdl_buff(&[s1, s2].concat(), "filter");
 
                                     r.commit_all();
                                 }
@@ -84,8 +83,9 @@ impl Conv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    let out =
-                                        upconv.process_block([s1, s2].concat().chunks_exact(p.0));
+                                    upconv
+                                        .push_chunk("signal", [s1, s2].concat().chunks_exact(p.0));
+                                    let out = upconv.process("signal", "filter");
 
                                     match seg_prod.write_chunk(p.0 * channels) {
                                         Ok(mut w) => {
@@ -148,7 +148,7 @@ impl Conv {
     ) {
         let mut filter_index = 0;
         let first = &new_filter[0..(self.partition[0].0 + 1) * self.partition[0].1 * self.channels];
-        self.rt_segment.set_filter(first);
+        self.rt_segment.set_fdl_buff(first, "filter");
         filter_index += (self.partition[0].0 + 1) * self.partition[0].1 * self.channels;
 
         for seg in self.non_rt_segments.iter_mut() {
@@ -302,7 +302,8 @@ impl Conv {
             .chunks_exact(self.buff_len)
             .map(|i| &i[self.buff_len - self.block_size..self.buff_len]);
 
-        let rt_out = self.rt_segment.process_block(map);
+        self.rt_segment.push_chunk("signal", map);
+        let rt_out = self.rt_segment.process("signal", "filter");
         for (new, out) in rt_out
             .chunks_exact(self.block_size)
             .zip(&mut self.output_buff.chunks_exact_mut(self.buff_len * 2))

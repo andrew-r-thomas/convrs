@@ -8,7 +8,6 @@ use crate::fdl::Fdl;
 pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
-    input_buff: Vec<f32>,
     input_fft_buff: Vec<f32>,
     output_buff: Vec<f32>,
     output_fft_buff: Vec<f32>,
@@ -36,7 +35,6 @@ impl UPConv {
         let accumulation_buffer = ifft.make_input_vec();
         let new_spectrum_buff = fft.make_output_vec();
 
-        let input_buff = vec![0.0; block_size * 2 * channels];
         let output_buff = vec![0.0; block_size * channels];
 
         let mut fdls = HashMap::new();
@@ -48,7 +46,6 @@ impl UPConv {
             fft,
             ifft,
             block_size,
-            input_buff,
             input_fft_buff,
             output_buff,
             output_fft_buff,
