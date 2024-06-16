@@ -1,5 +1,6 @@
 use realfft::RealFftPlanner;
 use realfft::{num_complex::Complex, ComplexToReal, RealToComplex};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::fdl::Fdl;
@@ -11,8 +12,7 @@ pub struct UPConv {
     input_fft_buff: Vec<f32>,
     output_buff: Vec<f32>,
     output_fft_buff: Vec<f32>,
-    filter: Fdl,
-    signal: Fdl,
+    fdls: HashMap<&'static str, Fdl>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
     block_size: usize,
@@ -42,6 +42,8 @@ impl UPConv {
         let filter = Fdl::new(starting_filter, block_size, num_blocks, channels);
         let signal = Fdl::new(None, block_size, num_blocks, channels);
 
+        let fdls = HashMap::from([("signal", filter), ("signal", signal)]);
+
         Self {
             fft,
             ifft,
@@ -50,8 +52,7 @@ impl UPConv {
             input_fft_buff,
             output_buff,
             output_fft_buff,
-            filter,
-            signal,
+            fdls,
             accumulation_buffer,
             new_spectrum_buff,
             channels,
@@ -59,8 +60,9 @@ impl UPConv {
         }
     }
 
-    pub fn set_filter(&mut self, new_filter: &[Complex<f32>]) {
-        self.filter.set_buffer(new_filter);
+    pub fn set_fdl_buff(&mut self, new_buff: &[Complex<f32>], fdl_key: &'static str) {
+        // TODO maybe put channels here
+        self.fdls.get_mut(fdl_key).unwrap().set_buffer(new_buff);
     }
 
     // filter chunk should be p.0 * channels
@@ -68,8 +70,8 @@ impl UPConv {
         &mut self,
         filter_chunk: impl Iterator<Item = &'push_filter_chunk [f32]>,
     ) {
+        // TODO kinda feel like this maybe should be somewhere else
         for (chunk_channel, channel) in filter_chunk.zip(0..self.channels) {
-            println!("chunk channel: {:?}", chunk_channel);
             self.input_fft_buff.fill(0.0);
             self.input_fft_buff[0..self.block_size].copy_from_slice(chunk_channel);
             self.new_spectrum_buff.fill(Complex { re: 0.0, im: 0.0 });
@@ -88,9 +90,9 @@ impl UPConv {
 
     /// block is a slice of channel slices, as opposed to a slice of sample slices,
     /// so there will be one block size slice of samples per channel in block
-    pub fn process_block<'blocks>(
+    pub fn process_block<'process_block>(
         &mut self,
-        channel_blocks: impl Iterator<Item = &'blocks [f32]>,
+        channel_blocks: impl Iterator<Item = &'process_block [f32]>,
     ) -> &[f32] {
         // move the inputs over by one block and add the new block on the end
         // iterate over everything by channel

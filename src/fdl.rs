@@ -1,7 +1,11 @@
-use realfft::num_complex::Complex;
+use std::sync::Arc;
 
+use realfft::{num_complex::Complex, RealToComplex};
+
+// TODO i would really love const generics here
 pub struct Fdl {
     buffer: Vec<Complex<f32>>,
+    input_buff: Vec<f32>,
     block_size: usize,
     num_blocks: usize,
     channels: usize,
@@ -21,6 +25,7 @@ impl Fdl {
 
         Self {
             buffer,
+            input_buff: vec![0.0; block_size * 2],
             block_size,
             num_blocks,
             channels,
@@ -31,17 +36,37 @@ impl Fdl {
         self.buffer.copy_from_slice(new_buffer);
     }
 
-    pub fn push_block(&mut self, block: &[Complex<f32>], channel: usize) {
-        let start = (self.block_size + 1) * self.num_blocks * channel;
-        let end = start + ((self.block_size + 1) * self.num_blocks);
-        let channel_buff = &mut self.buffer[start..end];
+    pub fn push_block(
+        &mut self,
+        block: &[f32],
+        fft: Arc<dyn RealToComplex<f32>>,
+        fft_in_buff: &mut [f32],
+        channel: usize,
+    ) {
+        let in_start = self.block_size * 2 * channel;
+        let in_end = in_start + (self.block_size * 2);
+        let buff_start = (self.block_size + 1) * self.num_blocks * channel;
+        let buff_end = buff_start + ((self.block_size + 1) * self.num_blocks);
+
+        let channel_buff = &mut self.buffer[buff_start..buff_end];
+        let channel_in = &mut self.input_buff[in_start..in_end];
+
+        channel_in.copy_within(self.block_size..self.block_size * 2, 0);
+        channel_in[self.block_size..self.block_size * 2].copy_from_slice(block);
 
         channel_buff.copy_within(
             0..channel_buff.len() - (self.block_size + 1),
             self.block_size + 1,
         );
 
-        channel_buff[0..self.block_size + 1].copy_from_slice(block);
+        fft_in_buff.copy_from_slice(&channel_in);
+
+        fft.process_with_scratch(
+            fft_in_buff,
+            &mut channel_buff[0..self.block_size + 1],
+            &mut [],
+        )
+        .unwrap();
     }
 
     // TODO simd
