@@ -211,7 +211,7 @@ impl Conv {
                             let to_write =
                                 &in_channel[self.buff_len - segment.block_size..self.buff_len];
                             if s1_idx + segment.block_size < s1.len() {
-                                s1[s1_idx..segment.block_size].copy_from_slice(to_write);
+                                s1[s1_idx..s1_idx + segment.block_size].copy_from_slice(to_write);
 
                                 s1_idx += segment.block_size;
                             } else if s1_idx < s1.len() {
@@ -223,7 +223,7 @@ impl Conv {
                                 s2_idx += segment.block_size - (s1.len() - s1_idx);
                                 s1_idx = s1.len();
                             } else {
-                                s2[s2_idx..segment.block_size].copy_from_slice(to_write);
+                                s2[s2_idx..s2_idx + segment.block_size].copy_from_slice(to_write);
 
                                 s2_idx += segment.block_size;
                             }

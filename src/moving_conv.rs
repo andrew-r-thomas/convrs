@@ -162,7 +162,7 @@ impl MovingConv {
                         for filter_channel in self.filter_buff.chunks_exact(filter_channel_len) {
                             let to_write = &filter_channel[0..segment.partition.0];
                             if s1_idx + segment.partition.0 < s1.len() {
-                                s1[s1_idx..segment.partition.0].copy_from_slice(to_write);
+                                s1[s1_idx..s1_idx + segment.partition.0].copy_from_slice(to_write);
 
                                 s1_idx += segment.partition.0;
                             } else if s1_idx < s1.len() {
@@ -174,7 +174,7 @@ impl MovingConv {
                                 s2_idx += segment.partition.0 - (s1.len() - s1_idx);
                                 s1_idx = s1.len();
                             } else {
-                                s2[s2_idx..segment.partition.0].copy_from_slice(to_write);
+                                s2[s2_idx..s2_idx + segment.partition.0].copy_from_slice(to_write);
 
                                 s2_idx += segment.partition.0;
                             }
@@ -233,7 +233,7 @@ impl MovingConv {
                         for in_channel in self.input_buff.chunks_exact(buff_len) {
                             let to_write = &in_channel[buff_len - segment.partition.0..buff_len];
                             if s1_idx + segment.partition.0 < s1.len() {
-                                s1[s1_idx..segment.partition.0].copy_from_slice(to_write);
+                                s1[s1_idx..s1_idx + segment.partition.0].copy_from_slice(to_write);
 
                                 s1_idx += segment.partition.0;
                             } else if s1_idx < s1.len() {
@@ -245,7 +245,7 @@ impl MovingConv {
                                 s2_idx += segment.partition.0 - (s1.len() - s1_idx);
                                 s1_idx = s1.len();
                             } else {
-                                s2[s2_idx..segment.partition.0].copy_from_slice(to_write);
+                                s2[s2_idx..s2_idx + segment.partition.0].copy_from_slice(to_write);
 
                                 s2_idx += segment.partition.0;
                             }
