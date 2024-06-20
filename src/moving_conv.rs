@@ -41,7 +41,6 @@ impl MovingConv {
 
         let mut non_rt_segments = vec![];
         if partition.len() > 1 {
-            let mut offset_samples = partition[0].0 * partition[0].1;
             for i in 1..partition.len() {
                 let p = partition[i];
                 // TODO figure out the correct ringbuf length based on the offset
@@ -49,7 +48,7 @@ impl MovingConv {
                 let (mut seg_prod, rt_cons) = RingBuffer::<f32>::new(p.0 * channels * 1000);
 
                 let (filter_prod, mut filter_cons) =
-                    RingBuffer::<f32>::new((p.0 + 1) * p.1 * channels * 2);
+                    RingBuffer::<f32>::new(p.0 * p.1 * channels * 2);
 
                 let mut upconv = UPConv::new(p.0, channels, p.1, fdls);
 

@@ -9,11 +9,11 @@ pub struct UPConv {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
     input_fft_buff: Vec<f32>,
-    output_buff: Vec<f32>,
     output_fft_buff: Vec<f32>,
-    fdls: HashMap<&'static str, Fdl>,
     accumulation_buffer: Vec<Complex<f32>>,
     new_spectrum_buff: Vec<Complex<f32>>,
+    fdls: HashMap<&'static str, Fdl>,
+    output_buff: Vec<f32>,
     block_size: usize,
     channels: usize,
     num_blocks: usize,
@@ -24,7 +24,7 @@ impl UPConv {
         block_size: usize,
         channels: usize,
         num_blocks: usize,
-        fdl_keys: &[&'static str],
+        fdl_keys: impl Iterator<Item = &'static str>,
     ) -> Self {
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(block_size * 2);
@@ -39,7 +39,7 @@ impl UPConv {
 
         let mut fdls = HashMap::new();
         for fdl_key in fdl_keys {
-            fdls.insert(*fdl_key, Fdl::new(block_size, num_blocks, channels));
+            fdls.insert(fdl_key, Fdl::new(block_size, num_blocks, channels));
         }
 
         Self {
