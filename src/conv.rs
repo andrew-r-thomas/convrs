@@ -83,8 +83,11 @@ impl Conv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    upconv
-                                        .push_chunk("signal", [s1, s2].concat().chunks_exact(p.0));
+                                    upconv.push_chunk(
+                                        "signal",
+                                        [s1, s2].concat().chunks_exact(p.0),
+                                        true,
+                                    );
                                     let out = upconv.process("signal", "filter");
 
                                     match seg_prod.write_chunk(p.0 * channels) {
@@ -302,7 +305,7 @@ impl Conv {
             .chunks_exact(self.buff_len)
             .map(|i| &i[self.buff_len - self.block_size..self.buff_len]);
 
-        self.rt_segment.push_chunk("signal", map);
+        self.rt_segment.push_chunk("signal", map, true);
         let rt_out = self.rt_segment.process("signal", "filter");
         for (new, out) in rt_out
             .chunks_exact(self.block_size)

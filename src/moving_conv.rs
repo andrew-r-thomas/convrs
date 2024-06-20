@@ -62,8 +62,11 @@ impl MovingConv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    upconv
-                                        .push_chunk("filter", [s1, s2].concat().chunks_exact(p.0));
+                                    upconv.push_chunk(
+                                        "filter",
+                                        [s1, s2].concat().chunks_exact(p.0),
+                                        false,
+                                    );
 
                                     r.commit_all();
                                 }
@@ -75,8 +78,11 @@ impl MovingConv {
                                 Ok(r) => {
                                     let (s1, s2) = r.as_slices();
 
-                                    upconv
-                                        .push_chunk("signal", [s1, s2].concat().chunks_exact(p.0));
+                                    upconv.push_chunk(
+                                        "signal",
+                                        [s1, s2].concat().chunks_exact(p.0),
+                                        true,
+                                    );
                                     let out = upconv.process("signal", "filter");
 
                                     match seg_prod.write_chunk(p.0 * channels) {
@@ -195,6 +201,7 @@ impl MovingConv {
             self.filter_buff
                 .chunks_exact(filter_channel_len)
                 .map(|b| &b[0..block_size]),
+            true,
         );
     }
 
@@ -328,7 +335,7 @@ impl MovingConv {
             .chunks_exact(buff_len)
             .map(|i| &i[buff_len - block_size..buff_len]);
 
-        self.rt_segment.push_chunk("signal", map);
+        self.rt_segment.push_chunk("signal", map, true);
         let rt_out = self.rt_segment.process("signal", "filter");
         for (new, out) in rt_out
             .chunks_exact(block_size)

@@ -1,3 +1,5 @@
+mod scratch;
+
 use std::{thread, time::Duration};
 
 use convrs::{self, conv::Conv, helpers::process_filter, moving_conv::MovingConv};
