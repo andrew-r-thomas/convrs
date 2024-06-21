@@ -1,8 +1,6 @@
-mod scratch;
-
 use std::{thread, time::Duration};
 
-use convrs::{self, conv::Conv, helpers::process_filter, moving_conv::MovingConv};
+use convrs::{self, conv::Conv, helpers::process_filter};
 use hound::{WavReader, WavSpec, WavWriter};
 use realfft::{num_complex::Complex, RealFftPlanner};
 
@@ -21,7 +19,8 @@ fn correctness() {
     // this is good enough for basic correctness
     let partition = &[(128, 22), (1024, 21), (8192, 23)];
     let processed_filter = process_filter(short, partition);
-    let mut conv = Conv::new(128, &processed_filter, partition, 2);
+    let mut conv = Conv::new(partition, 2);
+    conv.set_filter(&processed_filter);
 
     let mut test_l_out = vec![];
     let mut test_r_out = vec![];

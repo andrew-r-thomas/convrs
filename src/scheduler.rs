@@ -1,5 +1,6 @@
 use std::{collections::HashMap, thread};
 
+use itertools::FilterMapOk;
 use realfft::num_complex::Complex;
 use rtrb::{Consumer, Producer, RingBuffer};
 
@@ -30,10 +31,10 @@ struct SegmentHandle {
 }
 
 pub struct FdlConfig {
-    name: &'static str,
-    complex_ringbuff: bool,
-    real_ringbuff: bool,
-    moving: bool,
+    pub name: &'static str,
+    pub complex_ringbuff: bool,
+    pub real_ringbuff: bool,
+    pub moving: bool,
 }
 
 // TODO you could consider passing already made upconvs to this, and just have it
@@ -165,6 +166,35 @@ impl Scheduler {
             non_rt_segments,
             block_size: partition.first().unwrap().0,
             process_counter: 0,
+        }
+    }
+
+    pub fn set(&mut self, fdl_key: &'static str, data: &[Complex<f32>]) {
+        let mut index = 0;
+        let first_part = self.partition.first().unwrap();
+        let first = &data[0..(first_part.0 + 1) * first_part.1 * self.channels];
+
+        self.rt_segment.set_fdl_buff(first, fdl_key);
+        index += (first_part.0 + 1) * first_part.1 * self.channels;
+
+        for seg in &mut self.non_rt_segments {
+            let chunk = &data[index..index + (seg.block_size + 1) * seg.num_blocks * self.channels];
+
+            let complex_prod = seg.complex_prods.get_mut(fdl_key).unwrap();
+
+            match complex_prod.write_chunk((seg.block_size + 1) * seg.num_blocks * self.channels) {
+                Ok(mut w) => {
+                    let (s1, s2) = w.as_mut_slices();
+
+                    s1.copy_from_slice(&chunk[0..s1.len()]);
+                    s2.copy_from_slice(&chunk[s1.len()..s1.len() + s2.len()]);
+
+                    w.commit_all();
+                }
+                Err(_) => todo!(),
+            }
+
+            index += (seg.block_size + 1) * seg.num_blocks * self.channels;
         }
     }
 

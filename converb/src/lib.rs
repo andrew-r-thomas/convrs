@@ -49,7 +49,8 @@ impl Default for Converb {
             partition,
         );
 
-        let conv = Conv::new(128, &filter_1_spectrums, partition, 2);
+        let mut conv = Conv::new(partition, 2);
+        conv.set_filter(&filter_1_spectrums);
 
         Self {
             params: Arc::new(ConverbParams::default()),
@@ -236,7 +237,7 @@ impl Plugin for Converb {
                 Err(_) => todo!(),
             }
 
-            self.conv.update_filter(&self.filter_buff);
+            self.conv.set_filter(&self.filter_buff);
 
             self.is_filter_1 = self.params.filter_1.value();
         }
