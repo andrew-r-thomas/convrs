@@ -19,8 +19,7 @@ fn correctness() {
     // this is good enough for basic correctness
     let partition = &[(128, 22), (1024, 21), (8192, 23)];
     let processed_filter = process_filter(short, partition);
-    let mut conv = Conv::new(partition, 2);
-    conv.set_filter(&processed_filter);
+    let mut conv = Conv::new(128, &processed_filter, partition, 2);
     // let mut conv = UPConv::new(128, 2, 22, ["signal", "filter"].into_iter());
     // conv.set_fdl_buff(&processed_filter[0..(128 + 1) * 22 * 2], "filter");
 
