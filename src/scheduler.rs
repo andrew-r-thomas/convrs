@@ -250,17 +250,17 @@ impl Scheduler {
                     Err(_) => todo!(),
                 }
             }
-
-            self.rt_segment.push_chunk(
-                fdl_key,
-                fdl_in
-                    .0
-                    .chunks_exact(fdl_len)
-                    .map(|f| &f[0..self.block_size]),
-                // TODO i dont really like that were passing this as an argument
-                sliding,
-            );
         }
+
+        self.rt_segment.push_chunk(
+            fdl_key,
+            fdl_in
+                .0
+                .chunks_exact(fdl_len)
+                .map(|f| &f[0..self.block_size]),
+            // TODO i dont really like that were passing this as an argument
+            sliding,
+        );
 
         // TODO logic for reseting counter after largest size so that
         // we dont run out of room in usize
@@ -275,9 +275,14 @@ impl Scheduler {
         // TODO i dont really like this process counter business, want to make sure its correct conceptually
         self.process_counter += 1;
         let out_len = self.out_buff.len();
+        for out_channel in self.out_buff.chunks_exact_mut(out_len / self.channels) {
+            let out_channel_len = out_channel.len();
+            out_channel.copy_within(self.block_size..out_channel_len, 0);
+            out_channel[out_channel_len - self.block_size..out_channel_len].fill(0.0);
+        }
         for seg in &mut self.non_rt_segments {
             if self.process_counter % seg.avail == 0 {
-                seg.process_prod.push((fdl_1, fdl_2));
+                seg.process_prod.push((fdl_1, fdl_2)).unwrap();
             }
             if self.process_counter >= seg.offset
                 && (self.process_counter - seg.offset) % seg.avail == 0

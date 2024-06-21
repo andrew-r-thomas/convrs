@@ -1,6 +1,6 @@
 use std::{thread, time::Duration};
 
-use convrs::{self, conv::Conv, helpers::process_filter};
+use convrs::{self, conv::Conv, helpers::process_filter, upconv::UPConv};
 use hound::{WavReader, WavSpec, WavWriter};
 use realfft::{num_complex::Complex, RealFftPlanner};
 
@@ -21,6 +21,8 @@ fn correctness() {
     let processed_filter = process_filter(short, partition);
     let mut conv = Conv::new(partition, 2);
     conv.set_filter(&processed_filter);
+    // let mut conv = UPConv::new(128, 2, 22, ["signal", "filter"].into_iter());
+    // conv.set_fdl_buff(&processed_filter[0..(128 + 1) * 22 * 2], "filter");
 
     let mut test_l_out = vec![];
     let mut test_r_out = vec![];
@@ -29,9 +31,13 @@ fn correctness() {
         let vec = [l_block, r_block].concat();
 
         let mut out = conv.process_block(vec.chunks_exact(128));
+        // conv.push_chunk("signal", vec.chunks_exact(128), true);
+        // let out = conv.process("signal", "filter");
 
         let out_l = out.next().unwrap();
         let out_r = out.next().unwrap();
+        // let out_l = &out[0..128];
+        // let out_r = &out[128..128 * 2];
 
         test_l_out.extend_from_slice(out_l);
         test_r_out.extend_from_slice(out_r);
@@ -50,10 +56,7 @@ fn correctness() {
     }
 
     write_to_wav((control_l.as_slice(), control_r.as_slice()), "control.wav");
-    write_to_wav(
-        (test_l_out.as_slice(), test_r_out.as_slice()),
-        "test_move.wav",
-    );
+    write_to_wav((test_l_out.as_slice(), test_r_out.as_slice()), "test.wav");
 }
 
 fn basic_fft_conv<'fft_conv>(signal: &[f32], filter: &[f32]) -> Vec<f32> {

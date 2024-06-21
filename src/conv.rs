@@ -19,7 +19,7 @@ impl Conv {
             FdlConfig {
                 name: "filter",
                 complex_ringbuff: true,
-                real_ringbuff: true,
+                real_ringbuff: false,
                 moving: false,
             },
         ];
