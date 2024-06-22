@@ -30,21 +30,11 @@ struct SegmentHandle {
 }
 
 impl Conv {
-    pub fn new(
-        block_size: usize,
-        starting_filter: &[Complex<f32>],
-        partition: &[(usize, usize)],
-        channels: usize,
-    ) -> Self {
-        let mut filter_index = 0;
+    pub fn new(partition: &[(usize, usize)], channels: usize) -> Self {
         let fdls = ["signal", "filter"];
-        let first_part = &starting_filter[0..(partition[0].0 + 1) * partition[0].1 * channels];
+        let block_size = partition.first().unwrap().0;
 
-        let mut rt_segment =
-            UPConv::new(partition[0].0, channels, partition[0].1, fdls.into_iter());
-        rt_segment.set_fdl_buff(first_part, "filter");
-
-        filter_index += (partition[0].0 + 1) * partition[0].1 * channels;
+        let rt_segment = UPConv::new(partition[0].0, channels, partition[0].1, fdls.into_iter());
 
         let mut non_rt_segments = vec![];
         if partition.len() > 1 {
@@ -61,12 +51,6 @@ impl Conv {
                     RingBuffer::<Complex<f32>>::new((p.0 + 1) * p.1 * channels * 2);
 
                 let mut upconv = UPConv::new(p.0, channels, p.1, fdls.into_iter());
-                upconv.set_fdl_buff(
-                    &starting_filter[filter_index..filter_index + ((p.0 + 1) * p.1 * channels)],
-                    "filter",
-                );
-
-                filter_index += ((p.0 + 1) * p.1) * channels;
 
                 thread::spawn(move || {
                     // TODO a raw loop i feel like is a really bad idea here
