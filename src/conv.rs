@@ -77,6 +77,7 @@ impl Conv {
                                         "filter",
                                         [s1, s2].concat().chunks_exact(p.0),
                                         false,
+                                        true,
                                     );
                                     r.commit_all();
                                 }
@@ -92,6 +93,7 @@ impl Conv {
                                         "signal",
                                         [s1, s2].concat().chunks_exact(p.0),
                                         true,
+                                        false,
                                     );
                                     let out = upconv.process("signal", "filter");
 
@@ -248,7 +250,7 @@ impl Conv {
             .chunks_exact(self.buff_len)
             .map(|i| &i[self.buff_len - self.block_size..self.buff_len]);
 
-        self.rt_segment.push_chunk("filter", map, false);
+        self.rt_segment.push_chunk("filter", map, false, true);
     }
 
     pub fn process_block<'block>(
@@ -380,7 +382,7 @@ impl Conv {
             .chunks_exact(self.buff_len)
             .map(|i| &i[self.buff_len - self.block_size..self.buff_len]);
 
-        self.rt_segment.push_chunk("signal", map, true);
+        self.rt_segment.push_chunk("signal", map, true, false);
         let rt_out = self.rt_segment.process("signal", "filter");
         for (new, out) in rt_out
             .chunks_exact(self.block_size)
