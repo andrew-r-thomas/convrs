@@ -67,6 +67,7 @@ impl UPConv {
         fdl_key: &'static str,
         chunk: impl Iterator<Item = &'push_chunk [f32]>,
         sliding: bool,
+        top: bool,
     ) {
         let fdl = self.fdls.get_mut(fdl_key).unwrap();
         for (chunk_channel, channel) in chunk.zip(0..self.channels) {
@@ -75,6 +76,7 @@ impl UPConv {
                 &self.fft,
                 &mut self.input_fft_buff,
                 sliding,
+                top,
                 channel,
             );
         }

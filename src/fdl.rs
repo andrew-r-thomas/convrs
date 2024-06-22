@@ -35,7 +35,7 @@ impl Fdl {
         fft: &Arc<dyn RealToComplex<f32>>,
         fft_in_buff: &mut [f32],
         sliding: bool,
-        // top: bool,
+        top: bool,
         channel: usize,
     ) {
         let in_start = self.block_size * 2 * channel;
@@ -57,26 +57,24 @@ impl Fdl {
             }
         }
 
-        channel_buff.copy_within(
-            0..channel_buff.len() - (self.block_size + 1),
-            self.block_size + 1,
-        );
-
         fft_in_buff.copy_from_slice(&channel_in);
 
-        // let out = match top {
-        //     true => {}
-        //     false => {
-        //         &mut channel_buff[0..self.block_size + 1]
-        //     }
-        // }
+        let channel_buff_len = channel_buff.len();
+        let out = match top {
+            true => {
+                channel_buff.copy_within(self.block_size + 1..channel_buff.len(), 0);
+                &mut channel_buff[channel_buff_len - (self.block_size + 1)..channel_buff_len]
+            }
+            false => {
+                channel_buff.copy_within(
+                    0..channel_buff.len() - (self.block_size + 1),
+                    self.block_size + 1,
+                );
+                &mut channel_buff[0..self.block_size + 1]
+            }
+        };
 
-        fft.process_with_scratch(
-            fft_in_buff,
-            &mut channel_buff[0..self.block_size + 1],
-            &mut [],
-        )
-        .unwrap();
+        fft.process_with_scratch(fft_in_buff, out, &mut []).unwrap();
     }
 
     // TODO simd
